@@ -115,6 +115,14 @@ func unsafeReadUint8(reader *io.SectionReader) uint8 {
 	return unsignedIntValue
 }
 
+func readFixedList(streamReader *io.SectionReader, listSize int) []byte {
+	buffer := make([]byte, listSize)
+	if err := binary.Read(streamReader, binary.LittleEndian, &buffer); err != nil {
+		log.Fatal("Failed to load buffer: ", err)
+	}
+	return buffer
+}
+
 func buildReaderForDecompressedFile(inputFilename string) (*bytes.Reader, int) {
 	inputFile, err := os.Open(inputFilename)
 	defer inputFile.Close()
@@ -168,11 +176,7 @@ func readExistingCityData(streamReader *io.SectionReader, tileDataHeader TileDat
 	fmt.Println("City level:", cityLevel)
 	fmt.Println("City current population:", currentPopulation)
 
-	buffer1 := make([]byte, 12)
-	if err := binary.Read(streamReader, binary.LittleEndian, &buffer1); err != nil {
-		log.Fatal("Failed to load buffer: ", err)
-	}
-
+	buffer1 := readFixedList(streamReader, 12)
 	cityName := readVarString(streamReader, "CityName")
 	fmt.Println("Buffer1:", buffer1, ", cityName:", cityName)
 
@@ -187,10 +191,7 @@ func readExistingCityData(streamReader *io.SectionReader, tileDataHeader TileDat
 
 	if unknownList1[len(unknownList1)-1] != 0 {
 		// Seems related to rebellion
-		buffer := make([]byte, 2)
-		if err := binary.Read(streamReader, binary.LittleEndian, &buffer); err != nil {
-			log.Fatal("Failed to load buffer: ", err)
-		}
+		buffer := readFixedList(streamReader, 2)
 		fmt.Println("bufferRebel:", buffer)
 	}
 
@@ -219,10 +220,7 @@ func readExistingCityData(streamReader *io.SectionReader, tileDataHeader TileDat
 	}
 
 	unknownList2Size := unsafeReadUint8(streamReader)
-	unknownList2 := make([]byte, unknownList2Size+6)
-	if err := binary.Read(streamReader, binary.LittleEndian, &unknownList2); err != nil {
-		log.Fatal("Failed to load buffer: ", err)
-	}
+	unknownList2 := readFixedList(streamReader, int(unknownList2Size)+6)
 	fmt.Println("UnknownList2Size:", unknownList2Size, ", unknownList2:", unknownList2)
 
 	return TileData{
@@ -239,10 +237,7 @@ func readOtherTile(streamReader *io.SectionReader, tileDataHeader TileDataHeader
 	// Has improvement
 	if improvementType != -1 {
 		// Read improvement data
-		improvementData := make([]byte, 23)
-		if err := binary.Read(streamReader, binary.LittleEndian, &improvementData); err != nil {
-			log.Fatal("Failed to load buffer: ", err)
-		}
+		improvementData := readFixedList(streamReader, 23)
 		fmt.Println("Remaining improvement data:", improvementData)
 	}
 
@@ -265,16 +260,10 @@ func readOtherTile(streamReader *io.SectionReader, tileDataHeader TileDataHeader
 			}
 			fmt.Println("Unit data2:", unitData2)
 
-			bufferUnitData2 := make([]byte, 15)
-			if err := binary.Read(streamReader, binary.LittleEndian, &bufferUnitData2); err != nil {
-				log.Fatal("Failed to load buffer: ", err)
-			}
+			bufferUnitData2 := readFixedList(streamReader, 15)
 			fmt.Println("bufferUnitData2:", bufferUnitData2)
 			if bufferUnitData2[1] == 1 {
-				bufferUnitData3 := make([]byte, 4)
-				if err := binary.Read(streamReader, binary.LittleEndian, &bufferUnitData3); err != nil {
-					log.Fatal("Failed to load buffer: ", err)
-				}
+				bufferUnitData3 := readFixedList(streamReader, 4)
 				fmt.Println("bufferUnitData3:", bufferUnitData3)
 			}
 		} else {
@@ -284,20 +273,14 @@ func readOtherTile(streamReader *io.SectionReader, tileDataHeader TileDataHeader
 				bufferSize = 8
 			}
 
-			bufferUnit := make([]byte, bufferSize)
-			if err := binary.Read(streamReader, binary.LittleEndian, &bufferUnit); err != nil {
-				log.Fatal("Failed to load buffer: ", err)
-			}
+			bufferUnit := readFixedList(streamReader, bufferSize)
 			fmt.Println("bufferUnit:", bufferUnit)
 		}
 	}
 
 	unknownListSize := unsafeReadUint8(streamReader)
 	fmt.Println("Read list with unknownListSize:", unknownListSize)
-	unknownList := make([]byte, unknownListSize+6)
-	if err := binary.Read(streamReader, binary.LittleEndian, &unknownList); err != nil {
-		log.Fatal("Failed to load buffer: ", err)
-	}
+	unknownList := readFixedList(streamReader, int(unknownListSize)+6)
 	fmt.Println("Unknown list data:", unknownList)
 
 	hasCity := false
@@ -367,10 +350,7 @@ func ReadPolytopiaSaveFile(inputFilename string) (*PolytopiaSaveOutput, error) {
 	mapName := readVarString(streamReader, "MapName")
 	fmt.Println("Map name:", mapName)
 
-	mapHeader2 := [69]byte{}
-	if err := binary.Read(streamReader, binary.LittleEndian, &mapHeader2); err != nil {
-		return nil, err
-	}
+	mapHeader2 := readFixedList(streamReader, 69)
 	fmt.Println("Map header2:", mapHeader2)
 
 	mapWidth := unsafeReadUint16(streamReader)
@@ -386,6 +366,7 @@ func ReadPolytopiaSaveFile(inputFilename string) (*PolytopiaSaveOutput, error) {
 
 	ownerTribeMap := make(map[int]int)
 	numPlayers := unsafeReadUint16(streamReader)
+	fmt.Println("Num players:", numPlayers)
 	for i := 0; i < int(numPlayers); i++ {
 		playerId := unsafeReadUint8(streamReader)
 		playerName := readVarString(streamReader, "playerName")
@@ -395,10 +376,7 @@ func ReadPolytopiaSaveFile(inputFilename string) (*PolytopiaSaveOutput, error) {
 		startTileCoordinates2 := unsafeReadInt32(streamReader)
 		tribe := unsafeReadUint16(streamReader)
 
-		buffer := make([]byte, 134)
-		if err := binary.Read(streamReader, binary.LittleEndian, &buffer); err != nil {
-			log.Fatal("Failed to load buffer: ", err)
-		}
+		buffer := readFixedList(streamReader, 69 + int(numPlayers * 5))
 
 		playerData := PlayerData{
 			Id:                   int(playerId),
@@ -419,19 +397,13 @@ func ReadPolytopiaSaveFile(inputFilename string) (*PolytopiaSaveOutput, error) {
 	}
 	fmt.Println("Owner to tribe map:", ownerTribeMap)
 
-	partBetweenInitialAndCurrentMap := [44]byte{}
-	if err := binary.Read(streamReader, binary.LittleEndian, &partBetweenInitialAndCurrentMap); err != nil {
-		return nil, err
-	}
+	partBetweenInitialAndCurrentMap := readFixedList(streamReader, 44)
 	fmt.Println("partBetweenInitialAndCurrentMap:", partBetweenInitialAndCurrentMap)
 
 	mapName2 := readVarString(streamReader, "MapName2")
 	fmt.Println("Map name2:", mapName2)
 
-	mapHeader3 := [69]byte{}
-	if err := binary.Read(streamReader, binary.LittleEndian, &mapHeader3); err != nil {
-		return nil, err
-	}
+	mapHeader3 := readFixedList(streamReader, 69)
 	fmt.Println("Map header3:", mapHeader3)
 
 	mapWidth2 := unsafeReadUint16(streamReader)
