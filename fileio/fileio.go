@@ -12,9 +12,13 @@ import (
 )
 
 type SaveMapHeader struct {
-	Unknown1   [39]byte
-	GameMode   uint8
-	Difficulty uint8
+	UnknownInt1  uint32
+	UnknownInt2  uint32
+	Unknown1     [7]byte
+	TotalPlayers uint32
+	Unknown2     [20]byte
+	GameMode     uint8
+	Difficulty   uint8
 }
 
 type TileDataHeader struct {
@@ -43,7 +47,14 @@ type PlayerData struct {
 	AutoPlay             bool
 	StartTileCoordinates [2]int
 	Tribe                int
-	Unknown              []byte
+	UnknownByte1         int
+	UnknownInt1          int
+	UnknownArr1          []int
+	Currency             int
+	Score                int
+	UnknownInt2          int
+	NumCities            int
+	Buffer               []byte
 }
 
 type UnitData struct {
@@ -337,6 +348,87 @@ func readTileData(streamReader *io.SectionReader, tileData [][]TileData, mapWidt
 	}
 }
 
+func readMapNameAndHeader(streamReader *io.SectionReader, totalPlayers int) {
+	mapName := readVarString(streamReader, "MapName")
+	fmt.Println("Map name:", mapName)
+
+	unknownInt1 := unsafeReadUint32(streamReader)
+	fmt.Println("UnknownInt1:", unknownInt1)
+
+	unknownArr1 := readFixedList(streamReader, 2)
+	fmt.Println("UnknownArr1:", unknownArr1)
+
+	unknownArr2Size := unsafeReadUint32(streamReader)
+	unknownArr2 := make([]uint16, unknownArr2Size)
+	for i := 0; i < int(unknownArr2Size); i++ {
+		unknownArr2[i] = unsafeReadUint16(streamReader)
+	}
+	fmt.Println("UnknownArr2:", unknownArr2, ", UnknownArr2Size:", unknownArr2Size)
+
+	unknownInt2 := unsafeReadUint32(streamReader)
+	fmt.Println("UnknownInt2:", unknownInt2)
+
+	unknownArr3 := readFixedList(streamReader, 13+len(unknownArr2))
+	fmt.Println("UnknownArr3:", unknownArr3, ", size:", len(unknownArr3))
+}
+
+func readPlayerData(streamReader *io.SectionReader) map[int]int {
+	ownerTribeMap := make(map[int]int)
+	numPlayers := unsafeReadUint16(streamReader)
+	fmt.Println("Num players:", numPlayers)
+	for i := 0; i < int(numPlayers); i++ {
+		playerId := unsafeReadUint8(streamReader)
+		playerName := readVarString(streamReader, "playerName")
+		playerAccountId := readVarString(streamReader, "playerAccountId")
+		autoPlay := unsafeReadUint8(streamReader)
+		startTileCoordinates1 := unsafeReadInt32(streamReader)
+		startTileCoordinates2 := unsafeReadInt32(streamReader)
+		tribe := unsafeReadUint16(streamReader)
+		unknownByte1 := unsafeReadUint8(streamReader)
+		unknownInt1 := unsafeReadUint32(streamReader)
+
+		unknownArrLen1 := unsafeReadUint16(streamReader)
+		unknownArr1 := make([]int, 0)
+		for i := 0; i < int(unknownArrLen1); i++ {
+			value1 := unsafeReadUint8(streamReader)
+			value2 := unsafeReadUint32(streamReader)
+			unknownArr1 = append(unknownArr1, int(value1), int(value2))
+		}
+
+		currency := unsafeReadUint32(streamReader)
+		score := unsafeReadUint32(streamReader)
+		unknownInt2 := unsafeReadUint32(streamReader)
+		numCities := unsafeReadUint16(streamReader)
+		buffer := readFixedList(streamReader, 48)
+
+		playerData := PlayerData{
+			Id:                   int(playerId),
+			Name:                 playerName,
+			AccountId:            playerAccountId,
+			AutoPlay:             int(autoPlay) != 0,
+			StartTileCoordinates: [2]int{int(startTileCoordinates1), int(startTileCoordinates2)},
+			Tribe:                int(tribe),
+			UnknownByte1:         int(unknownByte1),
+			UnknownInt1:          int(unknownInt1),
+			UnknownArr1:          unknownArr1,
+			Currency:             int(currency),
+			Score:                int(score),
+			UnknownInt2:          int(unknownInt2),
+			NumCities:            int(numCities),
+			Buffer:               buffer,
+		}
+
+		mappedTribe, ok := ownerTribeMap[playerData.Id]
+		if ok {
+			log.Fatal(fmt.Sprintf("Owner to tribe map has duplicate player id %v already mapped to %v", playerData.Id, mappedTribe))
+		}
+		ownerTribeMap[playerData.Id] = playerData.Tribe
+		fmt.Println("Player:", playerData)
+	}
+
+	return ownerTribeMap
+}
+
 func ReadPolytopiaSaveFile(inputFilename string) (*PolytopiaSaveOutput, error) {
 	decompressedReader, decompressedLength := buildReaderForDecompressedFile(inputFilename)
 	streamReader := io.NewSectionReader(decompressedReader, int64(0), int64(decompressedLength))
@@ -347,11 +439,7 @@ func ReadPolytopiaSaveFile(inputFilename string) (*PolytopiaSaveOutput, error) {
 	}
 	fmt.Println("Map header:", mapHeader)
 
-	mapName := readVarString(streamReader, "MapName")
-	fmt.Println("Map name:", mapName)
-
-	mapHeader2 := readFixedList(streamReader, 69)
-	fmt.Println("Map header2:", mapHeader2)
+	readMapNameAndHeader(streamReader, int(mapHeader.TotalPlayers))
 
 	mapWidth := unsafeReadUint16(streamReader)
 	mapHeight := unsafeReadUint16(streamReader)
@@ -364,47 +452,19 @@ func ReadPolytopiaSaveFile(inputFilename string) (*PolytopiaSaveOutput, error) {
 
 	readTileData(streamReader, tileData, int(mapWidth), int(mapHeight))
 
-	ownerTribeMap := make(map[int]int)
-	numPlayers := unsafeReadUint16(streamReader)
-	fmt.Println("Num players:", numPlayers)
-	for i := 0; i < int(numPlayers); i++ {
-		playerId := unsafeReadUint8(streamReader)
-		playerName := readVarString(streamReader, "playerName")
-		playerAccountId := readVarString(streamReader, "playerAccountId")
-		autoPlay := unsafeReadUint8(streamReader)
-		startTileCoordinates1 := unsafeReadInt32(streamReader)
-		startTileCoordinates2 := unsafeReadInt32(streamReader)
-		tribe := unsafeReadUint16(streamReader)
-
-		buffer := readFixedList(streamReader, 69 + int(numPlayers * 5))
-
-		playerData := PlayerData{
-			Id:                   int(playerId),
-			Name:                 playerName,
-			AccountId:            playerAccountId,
-			AutoPlay:             int(autoPlay) != 0,
-			StartTileCoordinates: [2]int{int(startTileCoordinates1), int(startTileCoordinates2)},
-			Tribe:                int(tribe),
-			Unknown:              buffer,
-		}
-
-		mappedTribe, ok := ownerTribeMap[playerData.Id]
-		if ok {
-			log.Fatal(fmt.Sprintf("Owner to tribe map has duplicate player id %v already mapped to %v", playerData.Id, mappedTribe))
-		}
-		ownerTribeMap[playerData.Id] = playerData.Tribe
-		fmt.Println("Player:", playerData)
-	}
+	ownerTribeMap := readPlayerData(streamReader)
 	fmt.Println("Owner to tribe map:", ownerTribeMap)
 
-	partBetweenInitialAndCurrentMap := readFixedList(streamReader, 44)
+	partBetweenInitialAndCurrentMap := readFixedList(streamReader, 3)
 	fmt.Println("partBetweenInitialAndCurrentMap:", partBetweenInitialAndCurrentMap)
 
-	mapName2 := readVarString(streamReader, "MapName2")
-	fmt.Println("Map name2:", mapName2)
+	mapHeader2 := SaveMapHeader{}
+	if err := binary.Read(streamReader, binary.LittleEndian, &mapHeader2); err != nil {
+		return nil, err
+	}
+	fmt.Println("Map header (second time):", mapHeader2)
 
-	mapHeader3 := readFixedList(streamReader, 69)
-	fmt.Println("Map header3:", mapHeader3)
+	readMapNameAndHeader(streamReader, int(mapHeader.TotalPlayers))
 
 	mapWidth2 := unsafeReadUint16(streamReader)
 	mapHeight2 := unsafeReadUint16(streamReader)
