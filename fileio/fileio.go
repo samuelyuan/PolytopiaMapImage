@@ -14,11 +14,16 @@ import (
 type SaveMapHeader struct {
 	UnknownInt1  uint32
 	UnknownInt2  uint32
-	Unknown1     [7]byte
-	TotalPlayers uint32
-	Unknown2     [20]byte
-	GameMode     uint8
-	Difficulty   uint8
+	Unknown1     [2]byte
+	CurrentTurn  uint16
+	Unknown2     [3]byte
+	MaxUnitId    uint32
+	UnknownByte1 uint8
+	Seed         uint32
+	TurnLimit    uint32
+	Unknown3     [11]byte
+	GameMode1    uint8
+	GameMode2    uint8
 }
 
 type TileDataHeader struct {
@@ -38,6 +43,7 @@ type TileData struct {
 	Capital  int
 	HasCity  bool
 	CityName string
+	Unit     *UnitData
 }
 
 type PlayerData struct {
@@ -58,19 +64,25 @@ type PlayerData struct {
 }
 
 type UnitData struct {
-	Unknown1           [4]byte
+	Id                 uint32
 	Owner              uint8
 	UnitType           uint16
-	Unknown2           [8]byte
-	CurrentCoordinates [2]uint32
-	HomeCoordinates    [2]uint32
+	Unknown            [8]byte
+	CurrentCoordinates [2]int32
+	HomeCoordinates    [2]int32
 	Health             uint16 // should be divided by 10 to get value ingame
 	PromotionLevel     uint16
 	Experience         uint16
 	Moved              bool
 	Attacked           bool
-	UnknownBool        bool
+	Flipped            bool
 	CreatedTurn        uint16
+}
+
+type ImprovementData struct {
+	Level    uint16
+	Founded  uint16
+	Unknown2 [19]byte
 }
 
 type PolytopiaSaveOutput struct {
@@ -184,30 +196,34 @@ func buildReaderForDecompressedFile(inputFilename string) (*bytes.Reader, int) {
 func readExistingCityData(streamReader *io.SectionReader, tileDataHeader TileDataHeader) TileData {
 	cityLevel := unsafeReadUint32(streamReader)
 	currentPopulation := unsafeReadUint16(streamReader)
+	totalPopulation := unsafeReadUint16(streamReader)
 	fmt.Println("City level:", cityLevel)
 	fmt.Println("City current population:", currentPopulation)
+	fmt.Println("City total population:", totalPopulation)
 
-	buffer1 := readFixedList(streamReader, 12)
+	buffer1 := readFixedList(streamReader, 10)
 	cityName := readVarString(streamReader, "CityName")
 	fmt.Println("Buffer1:", buffer1, ", cityName:", cityName)
 
 	_ = unsafeReadUint8(streamReader) // discard zero
-	unknownList1Size := unsafeReadUint16(streamReader)
-	unknownList1 := make([]int, unknownList1Size+1)
-	for i := 0; i < int(unknownList1Size)+1; i++ {
-		unknownValue := unsafeReadUint16(streamReader)
-		unknownList1[i] = int(unknownValue)
+	cityRewardsSize := unsafeReadUint16(streamReader)
+	cityRewards := make([]int, cityRewardsSize)
+	for i := 0; i < int(cityRewardsSize); i++ {
+		cityReward := unsafeReadUint16(streamReader)
+		cityRewards[i] = int(cityReward)
 	}
-	fmt.Println("unknownList1:", unknownList1)
+	fmt.Println("CityRewards:", cityRewards)
 
-	if unknownList1[len(unknownList1)-1] != 0 {
-		// Seems related to rebellion
+	rebellionFlag := unsafeReadUint16(streamReader)
+	fmt.Println("Rebellion flag:", rebellionFlag)
+	if rebellionFlag != 0 {
 		buffer := readFixedList(streamReader, 2)
 		fmt.Println("bufferRebel:", buffer)
 	}
 
 	unitFlag := unsafeReadUint8(streamReader)
 	fmt.Println("Unit flag:", unitFlag)
+	var unitDataPtr *UnitData
 	if unitFlag == 1 {
 		fmt.Println("City has unit")
 		unitData := UnitData{}
@@ -215,6 +231,7 @@ func readExistingCityData(streamReader *io.SectionReader, tileDataHeader TileDat
 			log.Fatal("Failed to load buffer: ", err)
 		}
 		fmt.Println("Unit data:", unitData)
+		unitDataPtr = &unitData
 
 		flag1 := unsafeReadUint8(streamReader) // seems to always be zero
 		flag2 := unsafeReadUint8(streamReader)
@@ -227,12 +244,15 @@ func readExistingCityData(streamReader *io.SectionReader, tileDataHeader TileDat
 		if err := binary.Read(streamReader, binary.LittleEndian, &bufferUnit); err != nil {
 			log.Fatal("Failed to load buffer: ", err)
 		}
-		fmt.Println("flag1:", flag1, ", flag2:", flag2, ", bufferUnit:", bufferUnit)
+		fmt.Println(fmt.Sprintf("flag1: %v, flag2: %v, bufferUnit: %v", flag1, flag2, bufferUnit))
 	}
 
-	unknownList2Size := unsafeReadUint8(streamReader)
-	unknownList2 := readFixedList(streamReader, int(unknownList2Size)+6)
-	fmt.Println("UnknownList2Size:", unknownList2Size, ", unknownList2:", unknownList2)
+	playerVisibilityListSize := unsafeReadUint8(streamReader)
+	playerVisibilityList := readFixedList(streamReader, int(playerVisibilityListSize))
+	fmt.Println("PlayerVisibilityList:", playerVisibilityList)
+
+	unknown := readFixedList(streamReader, 6)
+	fmt.Println("Unknown:", unknown)
 
 	return TileData{
 		Terrain:  int(tileDataHeader.Terrain),
@@ -241,6 +261,7 @@ func readExistingCityData(streamReader *io.SectionReader, tileDataHeader TileDat
 		Capital:  int(tileDataHeader.Capital),
 		HasCity:  true,
 		CityName: cityName,
+		Unit:     unitDataPtr,
 	}
 }
 
@@ -248,35 +269,46 @@ func readOtherTile(streamReader *io.SectionReader, tileDataHeader TileDataHeader
 	// Has improvement
 	if improvementType != -1 {
 		// Read improvement data
-		improvementData := readFixedList(streamReader, 23)
+		improvementData := ImprovementData{}
+		if err := binary.Read(streamReader, binary.LittleEndian, &improvementData); err != nil {
+			log.Fatal("Failed to load buffer: ", err)
+		}
 		fmt.Println("Remaining improvement data:", improvementData)
 	}
 
 	// Read unit data
 	hasUnitFlag := unsafeReadUint8(streamReader)
-	if hasUnitFlag == 1 { // unit flag
+	var unitDataPtr *UnitData
+	if hasUnitFlag == 1 {
 		fmt.Println("Tile has unit")
 		unitData := UnitData{}
 		if err := binary.Read(streamReader, binary.LittleEndian, &unitData); err != nil {
 			log.Fatal("Failed to load buffer: ", err)
 		}
 		fmt.Println("Unit data:", unitData)
+		unitDataPtr = &unitData
 
 		hasOtherUnitFlag := unsafeReadUint8(streamReader)
 		if hasOtherUnitFlag == 1 {
-			fmt.Println("Tile has other unit data")
-			unitData2 := UnitData{}
-			if err := binary.Read(streamReader, binary.LittleEndian, &unitData2); err != nil {
+			// If unit embarks or disembarks, a new unit is created in the backend, but it's still the same unit in the game
+			fmt.Println("Tile has previous unit data before transition")
+			previousUnitData := UnitData{}
+			if err := binary.Read(streamReader, binary.LittleEndian, &previousUnitData); err != nil {
 				log.Fatal("Failed to load buffer: ", err)
 			}
-			fmt.Println("Unit data2:", unitData2)
+			fmt.Println("Previous unit data:", previousUnitData)
 
-			bufferUnitData2 := readFixedList(streamReader, 15)
+			flag1 := unsafeReadUint8(streamReader)
+			fmt.Println("Flag1:", flag1)
+			bufferUnitData2 := readFixedList(streamReader, 7)
 			fmt.Println("bufferUnitData2:", bufferUnitData2)
-			if bufferUnitData2[1] == 1 {
-				bufferUnitData3 := readFixedList(streamReader, 4)
-				fmt.Println("bufferUnitData3:", bufferUnitData3)
+
+			bufferUnitData3 := readFixedList(streamReader, 7)
+			if bufferUnitData2[0] == 1 {
+				bufferUnitData3Remainder := readFixedList(streamReader, 4)
+				bufferUnitData3 = append(bufferUnitData3, bufferUnitData3Remainder...)
 			}
+			fmt.Println("bufferUnitData3:", bufferUnitData3)
 		} else {
 			bufferUnitFlag := unsafeReadUint8(streamReader)
 			bufferSize := 6
@@ -289,10 +321,12 @@ func readOtherTile(streamReader *io.SectionReader, tileDataHeader TileDataHeader
 		}
 	}
 
-	unknownListSize := unsafeReadUint8(streamReader)
-	fmt.Println("Read list with unknownListSize:", unknownListSize)
-	unknownList := readFixedList(streamReader, int(unknownListSize)+6)
-	fmt.Println("Unknown list data:", unknownList)
+	playerVisibilityListSize := unsafeReadUint8(streamReader)
+	playerVisibilityList := readFixedList(streamReader, int(playerVisibilityListSize))
+	fmt.Println("PlayerVisibilityList:", playerVisibilityList)
+
+	unknown := readFixedList(streamReader, 6)
+	fmt.Println("Unknown:", unknown)
 
 	hasCity := false
 	if improvementType == 1 {
@@ -306,10 +340,13 @@ func readOtherTile(streamReader *io.SectionReader, tileDataHeader TileDataHeader
 		Capital:  int(tileDataHeader.Capital),
 		HasCity:  hasCity,
 		CityName: "",
+		Unit:     unitDataPtr,
 	}
 }
 
 func readTileData(streamReader *io.SectionReader, tileData [][]TileData, mapWidth int, mapHeight int) {
+	allUnitData := make([]UnitData, 0)
+
 	for i := 0; i < int(mapWidth); i++ {
 		for j := 0; j < int(mapHeight); j++ {
 			tileDataHeader := TileDataHeader{}
@@ -344,32 +381,68 @@ func readTileData(streamReader *io.SectionReader, tileData [][]TileData, mapWidt
 			} else {
 				tileData[i][j] = readOtherTile(streamReader, tileDataHeader, resourceType, improvementType)
 			}
+
+			if tileData[i][j].Unit != nil {
+				allUnitData = append(allUnitData, *tileData[i][j].Unit)
+			}
 		}
+	}
+
+	fmt.Println("Total number of units:", len(allUnitData))
+	for i := 0; i < len(allUnitData); i++ {
+		fmt.Println("Unit", i, ":", allUnitData[i])
 	}
 }
 
-func readMapNameAndHeader(streamReader *io.SectionReader, totalPlayers int) {
+func readMapHeader(streamReader *io.SectionReader) {
+	mapHeader := SaveMapHeader{}
+	if err := binary.Read(streamReader, binary.LittleEndian, &mapHeader); err != nil {
+		log.Fatal("Failed to load SaveMapHeader: ", err)
+	}
+	fmt.Println("Map header:", mapHeader)
+
 	mapName := readVarString(streamReader, "MapName")
 	fmt.Println("Map name:", mapName)
 
-	unknownInt1 := unsafeReadUint32(streamReader)
-	fmt.Println("UnknownInt1:", unknownInt1)
+	// map dimenions is a square: squareSize x squareSize
+	squareSize := unsafeReadUint32(streamReader)
+	fmt.Println("Map square size:", squareSize)
 
-	unknownArr1 := readFixedList(streamReader, 2)
-	fmt.Println("UnknownArr1:", unknownArr1)
+	disabledTribesSize := unsafeReadUint16(streamReader)
+	fmt.Println("disabledTribesSize:", disabledTribesSize)
 
-	unknownArr2Size := unsafeReadUint32(streamReader)
-	unknownArr2 := make([]uint16, unknownArr2Size)
-	for i := 0; i < int(unknownArr2Size); i++ {
-		unknownArr2[i] = unsafeReadUint16(streamReader)
+	if disabledTribesSize > 0 {
+		disabledTribesArr := make([]uint16, disabledTribesSize)
+		for i := 0; i < int(disabledTribesSize); i++ {
+			disabledTribesArr[i] = unsafeReadUint16(streamReader)
+		}
+		fmt.Println("disabledTribesArr:", disabledTribesArr)
 	}
-	fmt.Println("UnknownArr2:", unknownArr2, ", UnknownArr2Size:", unknownArr2Size)
 
-	unknownInt2 := unsafeReadUint32(streamReader)
-	fmt.Println("UnknownInt2:", unknownInt2)
+	unlockedTribesSize := unsafeReadUint32(streamReader)
+	unlockedTribesArr := make([]uint16, unlockedTribesSize-1)
+	for i := 0; i < int(unlockedTribesSize)-1; i++ {
+		unlockedTribesArr[i] = unsafeReadUint16(streamReader)
+	}
+	fmt.Println("unlockedTribesArr:", unlockedTribesArr, ", unlockedTribesSize:", unlockedTribesSize)
 
-	unknownArr3 := readFixedList(streamReader, 13+len(unknownArr2))
-	fmt.Println("UnknownArr3:", unknownArr3, ", size:", len(unknownArr3))
+	gameDifficulty := unsafeReadUint16(streamReader)
+	fmt.Println("Game difficulty:", gameDifficulty)
+
+	numOpponents := unsafeReadUint32(streamReader)
+	fmt.Println("Num opponents:", numOpponents)
+
+	unknownArr := readFixedList(streamReader, 5+int(unlockedTribesSize))
+	fmt.Println("UnknownArr:", unknownArr, ", size:", len(unknownArr))
+
+	selectedTribeSkinSize := unsafeReadUint32(streamReader)
+	fmt.Println("selectedTribeSkinSize:", selectedTribeSkinSize)
+
+	for i := 0; i < int(selectedTribeSkinSize); i++ {
+		tribe := unsafeReadUint16(streamReader)
+		skin := unsafeReadUint16(streamReader)
+		fmt.Println(fmt.Sprintf("Tribe: %v, skin: %v", tribe, skin))
+	}
 }
 
 func readPlayerData(streamReader *io.SectionReader) map[int]int {
@@ -433,13 +506,8 @@ func ReadPolytopiaSaveFile(inputFilename string) (*PolytopiaSaveOutput, error) {
 	decompressedReader, decompressedLength := buildReaderForDecompressedFile(inputFilename)
 	streamReader := io.NewSectionReader(decompressedReader, int64(0), int64(decompressedLength))
 
-	mapHeader := SaveMapHeader{}
-	if err := binary.Read(streamReader, binary.LittleEndian, &mapHeader); err != nil {
-		return nil, err
-	}
-	fmt.Println("Map header:", mapHeader)
-
-	readMapNameAndHeader(streamReader, int(mapHeader.TotalPlayers))
+	// Read initial map state
+	readMapHeader(streamReader)
 
 	mapWidth := unsafeReadUint16(streamReader)
 	mapHeight := unsafeReadUint16(streamReader)
@@ -458,13 +526,8 @@ func ReadPolytopiaSaveFile(inputFilename string) (*PolytopiaSaveOutput, error) {
 	partBetweenInitialAndCurrentMap := readFixedList(streamReader, 3)
 	fmt.Println("partBetweenInitialAndCurrentMap:", partBetweenInitialAndCurrentMap)
 
-	mapHeader2 := SaveMapHeader{}
-	if err := binary.Read(streamReader, binary.LittleEndian, &mapHeader2); err != nil {
-		return nil, err
-	}
-	fmt.Println("Map header (second time):", mapHeader2)
-
-	readMapNameAndHeader(streamReader, int(mapHeader.TotalPlayers))
+	// Read current map state
+	readMapHeader(streamReader)
 
 	mapWidth2 := unsafeReadUint16(streamReader)
 	mapHeight2 := unsafeReadUint16(streamReader)
