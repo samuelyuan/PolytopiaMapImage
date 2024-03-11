@@ -12,21 +12,22 @@ import (
 )
 
 type MapHeaderInput struct {
-	Version1     uint32
-	Version2     uint32
-	Unknown1     [2]byte
-	CurrentTurn  uint16
-	Unknown2     [3]byte
-	MaxUnitId    uint32
-	UnknownByte1 uint8
-	Seed         uint32
-	TurnLimit    uint32
-	Unknown3     [11]byte
-	GameMode1    uint8
-	GameMode2    uint8
+	Version1           uint32
+	Version2           uint32
+	TotalActions       uint16
+	CurrentTurn        uint32
+	CurrentPlayerIndex uint8
+	MaxUnitId          uint32
+	UnknownByte1       uint8
+	Seed               uint32
+	TurnLimit          uint32
+	Unknown1           [11]byte
+	GameMode1          uint8
+	GameMode2          uint8
 }
 
 type MapHeaderOutput struct {
+	MapHeaderInput    MapHeaderInput
 	MapName           string
 	MapSquareSize     int
 	DisabledTribesArr []int
@@ -57,6 +58,53 @@ type TileData struct {
 	HasCity  bool
 	CityName string
 	Unit     *UnitData
+}
+
+type ActionBuild struct {
+	PlayerId        uint8
+	ImprovementType uint16
+	Coordinates     [2]uint32
+}
+
+type ActionAttack struct {
+	PlayerId uint8
+	UnitId   uint32
+	Origin   [2]uint32
+	Target   [2]uint32
+}
+
+type ActionTrain struct {
+	PlayerId uint8
+	UnitType uint16
+	Position [2]uint32
+}
+
+type ActionMove struct {
+	PlayerId    uint8
+	OldPosition [2]uint32
+	NewPosition [2]uint32
+	UnitId      uint32
+}
+
+type ActionCaptureCity struct {
+	PlayerId    uint8
+	UnitId      uint32
+	Coordinates [2]uint32
+}
+
+type ActionResearch struct {
+	PlayerId uint8
+	TechType uint16
+}
+
+type ActionCityReward struct {
+	PlayerId    uint8
+	Coordinates [2]uint32
+	Reward      uint16
+}
+
+type ActionEndTurn struct {
+	PlayerId uint8
 }
 
 type PlayerData struct {
@@ -105,11 +153,13 @@ type UnitData struct {
 }
 
 type ImprovementData struct {
-	Level     uint16
-	Founded   uint16
-	Unknown1  [6]byte
-	BaseScore uint16
-	Unknown2  [11]byte
+	Level       uint16
+	Founded     uint16
+	Unknown1    [6]byte
+	BaseScore   uint16
+	Unknown2    [6]byte
+	UnknownInt1 uint16
+	Unknown3    [3]byte
 }
 
 type PlayerTaskData struct {
@@ -332,7 +382,7 @@ func readOtherTile(streamReader *io.SectionReader, tileDataHeader TileDataHeader
 		if err := binary.Read(streamReader, binary.LittleEndian, &improvementData); err != nil {
 			log.Fatal("Failed to load buffer: ", err)
 		}
-		fmt.Println("Remaining improvement data:", improvementData)
+		fmt.Printf("Improvement data: %+v\n", improvementData)
 	}
 
 	// Read unit data
@@ -384,7 +434,13 @@ func readOtherTile(streamReader *io.SectionReader, tileDataHeader TileDataHeader
 	playerVisibilityList := readFixedList(streamReader, int(playerVisibilityListSize))
 	fmt.Println("PlayerVisibilityList:", playerVisibilityList)
 
-	unknown := readFixedList(streamReader, 6)
+	hasRoad := unsafeReadUint8(streamReader)
+	fmt.Println("Has road:", hasRoad)
+
+	hasWaterRoute := unsafeReadUint8(streamReader)
+	fmt.Println("Has water route:", hasWaterRoute)
+
+	unknown := readFixedList(streamReader, 4)
 	fmt.Println("Unknown:", unknown)
 
 	hasCity := false
@@ -454,18 +510,15 @@ func readTileData(streamReader *io.SectionReader, tileData [][]TileData, mapWidt
 }
 
 func readMapHeader(streamReader *io.SectionReader) MapHeaderOutput {
-	mapHeader := MapHeaderInput{}
-	if err := binary.Read(streamReader, binary.LittleEndian, &mapHeader); err != nil {
+	mapHeaderInput := MapHeaderInput{}
+	if err := binary.Read(streamReader, binary.LittleEndian, &mapHeaderInput); err != nil {
 		log.Fatal("Failed to load MapHeaderInput: ", err)
 	}
-	fmt.Println("Map header:", mapHeader)
 
 	mapName := readVarString(streamReader, "MapName")
-	fmt.Println("Map name:", mapName)
 
 	// map dimenions is a square: squareSize x squareSize
 	squareSize := int(unsafeReadUint32(streamReader))
-	fmt.Println("Map square size:", squareSize)
 
 	disabledTribesSize := unsafeReadUint16(streamReader)
 	disabledTribesArr := make([]int, disabledTribesSize)
@@ -474,33 +527,22 @@ func readMapHeader(streamReader *io.SectionReader) MapHeaderOutput {
 			disabledTribesArr[i] = int(unsafeReadUint16(streamReader))
 		}
 	}
-	fmt.Println("Disabled tribes:", disabledTribesArr, ", size:", disabledTribesSize)
 
 	unlockedTribesSize := unsafeReadUint32(streamReader)
 	unlockedTribesArr := make([]int, unlockedTribesSize-1)
 	for i := 0; i < int(unlockedTribesSize)-1; i++ {
 		unlockedTribesArr[i] = int(unsafeReadUint16(streamReader))
 	}
-	fmt.Println("Unlocked tribes:", unlockedTribesArr, ", size:", unlockedTribesSize)
 
 	gameDifficulty := unsafeReadUint16(streamReader)
-	fmt.Println("Game difficulty:", gameDifficulty)
-
 	numOpponents := unsafeReadUint32(streamReader)
-	fmt.Println("Num opponents:", numOpponents)
-
 	unknownArr := readFixedList(streamReader, 5+int(unlockedTribesSize))
-	fmt.Println("Unknown:", unknownArr, ", size:", len(unknownArr))
-
 	selectedTribeSkinSize := unsafeReadUint32(streamReader)
-	fmt.Println("selectedTribeSkinSize:", selectedTribeSkinSize)
 
 	selectedTribeSkins := make(map[int]int)
 	for i := 0; i < int(selectedTribeSkinSize); i++ {
 		tribe := unsafeReadUint16(streamReader)
 		skin := unsafeReadUint16(streamReader)
-		fmt.Println(fmt.Sprintf("Tribe: %v, skin: %v", tribe, skin))
-
 		selectedTribeSkins[int(tribe)] = int(skin)
 	}
 
@@ -511,9 +553,8 @@ func readMapHeader(streamReader *io.SectionReader) MapHeaderOutput {
 		mapHeight = unsafeReadUint16(streamReader)
 	}
 
-	fmt.Println("Map width:", mapWidth, ", height:", mapHeight)
-
 	return MapHeaderOutput{
+		MapHeaderInput:    mapHeaderInput,
 		MapName:           mapName,
 		MapSquareSize:     squareSize,
 		DisabledTribesArr: disabledTribesArr,
@@ -680,13 +721,102 @@ func buildOwnerTribeMap(allPlayerData []PlayerData) map[int]int {
 	return ownerTribeMap
 }
 
+func readAllActions(streamReader *io.SectionReader) {
+	numActions := unsafeReadUint16(streamReader)
+	fmt.Println("Total actions:", numActions)
+
+	fmt.Println("Reading all player actions:")
+	for i := 0; i < int(numActions); i++ {
+		actionType := unsafeReadUint16(streamReader)
+
+		var buffer []byte
+		if actionType == 1 {
+			action := ActionBuild{}
+			if err := binary.Read(streamReader, binary.LittleEndian, &action); err != nil {
+				log.Fatal("Failed to load action: ", err)
+			}
+			fmt.Printf("Build: %+v\n", action)
+		} else if actionType == 2 {
+			action := ActionAttack{}
+			if err := binary.Read(streamReader, binary.LittleEndian, &action); err != nil {
+				log.Fatal("Failed to load action: ", err)
+			}
+			fmt.Printf("Attack: %+v\n", action)
+		} else if actionType == 3 {
+			buffer = readFixedList(streamReader, 9)
+		} else if actionType == 5 {
+			action := ActionTrain{}
+			if err := binary.Read(streamReader, binary.LittleEndian, &action); err != nil {
+				log.Fatal("Failed to load action: ", err)
+			}
+			fmt.Printf("Train: %+v\n", action)
+		} else if actionType == 6 {
+			action := ActionMove{}
+			if err := binary.Read(streamReader, binary.LittleEndian, &action); err != nil {
+				log.Fatal("Failed to load action: ", err)
+			}
+			fmt.Printf("Move: %+v\n", action)
+		} else if actionType == 7 {
+			action := ActionCaptureCity{}
+			if err := binary.Read(streamReader, binary.LittleEndian, &action); err != nil {
+				log.Fatal("Failed to load action: ", err)
+			}
+			fmt.Printf("CaptureCity: %+v\n", action)
+		} else if actionType == 8 {
+			action := ActionResearch{}
+			if err := binary.Read(streamReader, binary.LittleEndian, &action); err != nil {
+				log.Fatal("Failed to load action: ", err)
+			}
+			fmt.Printf("Research: %+v\n", action)
+		} else if actionType == 9 {
+			buffer = readFixedList(streamReader, 9)
+		} else if actionType == 11 {
+			action := ActionCityReward{}
+			if err := binary.Read(streamReader, binary.LittleEndian, &action); err != nil {
+				log.Fatal("Failed to load action: ", err)
+			}
+			fmt.Printf("CityReward: %+v\n", action)
+		} else if actionType == 13 {
+			buffer = readFixedList(streamReader, 9)
+		} else if actionType == 14 {
+			buffer = readFixedList(streamReader, 9)
+		} else if actionType == 15 {
+			action := ActionEndTurn{}
+			if err := binary.Read(streamReader, binary.LittleEndian, &action); err != nil {
+				log.Fatal("Failed to load action: ", err)
+			}
+			fmt.Printf("EndTurn: %+v\n", action)
+		} else if actionType == 16 {
+			buffer = readFixedList(streamReader, 11)
+		} else if actionType == 20 {
+			buffer = readFixedList(streamReader, 1)
+		} else if actionType == 21 {
+			buffer = readFixedList(streamReader, 9)
+		} else if actionType == 27 {
+			buffer = readFixedList(streamReader, 10)
+		} else if actionType == 28 {
+			buffer = readFixedList(streamReader, 3)
+		} else if actionType == 29 {
+			buffer = readFixedList(streamReader, 10)
+		} else if actionType == 30 {
+			buffer = readFixedList(streamReader, 10)
+		} else {
+			log.Fatal("Unknown action type:", actionType)
+		}
+
+		if len(buffer) > 0 {
+			fmt.Println("Index", i, ", action type:", actionType, ", buffer:", buffer)
+		}
+	}
+}
+
 func ReadPolytopiaSaveFile(inputFilename string) (*PolytopiaSaveOutput, error) {
 	decompressedReader, decompressedLength := buildReaderForDecompressedFile(inputFilename)
 	streamReader := io.NewSectionReader(decompressedReader, int64(0), int64(decompressedLength))
 
 	// Read initial map state
 	initialMapHeaderOutput := readMapHeader(streamReader)
-	fmt.Println("initialMapHeaderOutput:", initialMapHeaderOutput)
+	fmt.Printf("initialMapHeaderOutput: %+v\n", initialMapHeaderOutput)
 
 	tileData := make([][]TileData, initialMapHeaderOutput.MapHeight)
 	for i := 0; i < initialMapHeaderOutput.MapHeight; i++ {
@@ -703,12 +833,17 @@ func ReadPolytopiaSaveFile(inputFilename string) (*PolytopiaSaveOutput, error) {
 
 	// Read current map state
 	currentMapHeaderOutput := readMapHeader(streamReader)
-	fmt.Println("currentMapHeaderOutput:", currentMapHeaderOutput)
+	fmt.Printf("currentMapHeaderOutput: %+v\n", currentMapHeaderOutput)
 
 	readTileData(streamReader, tileData, currentMapHeaderOutput.MapWidth, currentMapHeaderOutput.MapHeight)
 
 	ownerTribeMap = buildOwnerTribeMap(readAllPlayerData(streamReader))
 	fmt.Println("Owner to tribe map:", ownerTribeMap)
+
+	partAfterCurrentMap := readFixedList(streamReader, 2)
+	fmt.Println("PartAfterCurrentMap:", partAfterCurrentMap)
+
+	readAllActions(streamReader)
 
 	output := &PolytopiaSaveOutput{
 		MapHeight:     initialMapHeaderOutput.MapHeight,
