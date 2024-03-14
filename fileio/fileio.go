@@ -51,13 +51,35 @@ type TileDataHeader struct {
 }
 
 type TileData struct {
-	Terrain  int
-	Climate  int
-	Owner    int
-	Capital  int
-	HasCity  bool
-	CityName string
-	Unit     *UnitData
+	Header            TileDataHeader
+	Terrain           int
+	Climate           int
+	Owner             int
+	Capital           int
+	ResourceExists    bool
+	ResourceType      int
+	ImprovementExists bool
+	ImprovementType   int
+	HasCity           bool
+	CityName          string
+	Unit              *UnitData
+	BufferUnitData    []byte
+	PlayerVisibility  []uint8
+	HasRoad           bool
+	HasWaterRoute     bool
+	Unknown           []byte
+}
+
+type CityData struct {
+	CityLevel         int
+	CurrentPopulation int
+	TotalPopulation   int
+	Buffer1           []byte
+	CityName          string
+	FlagBeforeRewards int
+	CityRewards       []int
+	RebellionFlag     int
+	RebellionBuffer   []byte
 }
 
 type ActionBuild struct {
@@ -71,6 +93,11 @@ type ActionAttack struct {
 	UnitId   uint32
 	Origin   [2]uint32
 	Target   [2]uint32
+}
+
+type ActionRecover struct {
+	PlayerId    uint8
+	Coordinates [2]uint32
 }
 
 type ActionTrain struct {
@@ -97,14 +124,40 @@ type ActionResearch struct {
 	TechType uint16
 }
 
+type ActionDestroyImprovement struct {
+	PlayerId    uint8
+	Coordinates [2]uint32
+}
+
 type ActionCityReward struct {
 	PlayerId    uint8
 	Coordinates [2]uint32
 	Reward      uint16
 }
 
+type ActionPromote struct {
+	PlayerId    uint8
+	Coordinates [2]uint32
+}
+
+type ActionExamineRuins struct {
+	PlayerId    uint8
+	Coordinates [2]uint32
+}
+
 type ActionEndTurn struct {
 	PlayerId uint8
+}
+
+type ActionUpgrade struct {
+	PlayerId    uint8
+	UnitType    uint16
+	Coordinates [2]uint32
+}
+
+type ActionCityLevelUp struct {
+	PlayerId    uint8
+	Coordinates [2]uint32
 }
 
 type PlayerData struct {
@@ -303,43 +356,49 @@ func readExistingCityData(streamReader *io.SectionReader, tileDataHeader TileDat
 	cityLevel := unsafeReadUint32(streamReader)
 	currentPopulation := unsafeReadInt16(streamReader)
 	totalPopulation := unsafeReadUint16(streamReader)
-	fmt.Println("City level:", cityLevel)
-	fmt.Println("City current population:", currentPopulation)
-	fmt.Println("City total population:", totalPopulation)
-
 	buffer1 := readFixedList(streamReader, 10)
 	cityName := readVarString(streamReader, "CityName")
-	fmt.Println("Buffer1:", buffer1, ", cityName:", cityName)
 
 	flagBeforeRewards := unsafeReadUint8(streamReader)
 	if flagBeforeRewards != 0 {
 		log.Fatal("flagBeforeRewards isn't 0")
 	}
+
 	cityRewardsSize := unsafeReadUint16(streamReader)
 	cityRewards := make([]int, cityRewardsSize)
 	for i := 0; i < int(cityRewardsSize); i++ {
 		cityReward := unsafeReadUint16(streamReader)
 		cityRewards[i] = int(cityReward)
 	}
-	fmt.Println("CityRewards:", cityRewards)
 
 	rebellionFlag := unsafeReadUint16(streamReader)
-	fmt.Println("Rebellion flag:", rebellionFlag)
+	var rebellionBuffer []byte
 	if rebellionFlag != 0 {
-		buffer := readFixedList(streamReader, 2)
-		fmt.Println("bufferRebel:", buffer)
+		rebellionBuffer = readFixedList(streamReader, 2)
 	}
 
+	cityData := CityData{
+		CityLevel:         int(cityLevel),
+		CurrentPopulation: int(currentPopulation),
+		TotalPopulation:   int(totalPopulation),
+		Buffer1:           buffer1,
+		CityName:          cityName,
+		FlagBeforeRewards: int(flagBeforeRewards),
+		CityRewards:       cityRewards,
+		RebellionFlag:     int(rebellionFlag),
+		RebellionBuffer:   rebellionBuffer,
+	}
+	fmt.Printf("CityData: %+v\n", cityData)
+
 	unitFlag := unsafeReadUint8(streamReader)
-	fmt.Println("Unit flag:", unitFlag)
+	bufferUnitData := make([]byte, 0)
 	var unitDataPtr *UnitData
 	if unitFlag == 1 {
-		fmt.Println("City has unit")
 		unitData := UnitData{}
 		if err := binary.Read(streamReader, binary.LittleEndian, &unitData); err != nil {
 			log.Fatal("Failed to load buffer: ", err)
 		}
-		fmt.Println("Unit data:", unitData)
+		fmt.Printf("Unit data: %+v\n", unitData)
 		unitDataPtr = &unitData
 
 		flag1 := unsafeReadUint8(streamReader) // seems to always be zero
@@ -354,23 +413,29 @@ func readExistingCityData(streamReader *io.SectionReader, tileDataHeader TileDat
 			log.Fatal("Failed to load buffer: ", err)
 		}
 		fmt.Println(fmt.Sprintf("flag1: %v, flag2: %v, bufferUnit: %v", flag1, flag2, bufferUnit))
+		bufferUnitData = append(bufferUnitData, bufferUnit...)
 	}
 
 	playerVisibilityListSize := unsafeReadUint8(streamReader)
 	playerVisibilityList := readFixedList(streamReader, int(playerVisibilityListSize))
-	fmt.Println("PlayerVisibilityList:", playerVisibilityList)
-
-	unknown := readFixedList(streamReader, 6)
-	fmt.Println("Unknown:", unknown)
+	hasRoad := unsafeReadUint8(streamReader)
+	hasWaterRoute := unsafeReadUint8(streamReader)
+	unknown := readFixedList(streamReader, 4)
 
 	return TileData{
-		Terrain:  int(tileDataHeader.Terrain),
-		Climate:  int(tileDataHeader.Climate),
-		Owner:    int(tileDataHeader.Owner),
-		Capital:  int(tileDataHeader.Capital),
-		HasCity:  true,
-		CityName: cityName,
-		Unit:     unitDataPtr,
+		Header:           tileDataHeader,
+		Terrain:          int(tileDataHeader.Terrain),
+		Climate:          int(tileDataHeader.Climate),
+		Owner:            int(tileDataHeader.Owner),
+		Capital:          int(tileDataHeader.Capital),
+		HasCity:          true,
+		CityName:         cityName,
+		Unit:             unitDataPtr,
+		BufferUnitData:   bufferUnitData,
+		PlayerVisibility: playerVisibilityList,
+		HasRoad:          hasRoad != 0,
+		HasWaterRoute:    hasWaterRoute != 0,
+		Unknown:          unknown,
 	}
 }
 
@@ -388,13 +453,13 @@ func readOtherTile(streamReader *io.SectionReader, tileDataHeader TileDataHeader
 	// Read unit data
 	hasUnitFlag := unsafeReadUint8(streamReader)
 	var unitDataPtr *UnitData
+	bufferUnitData := make([]byte, 0)
 	if hasUnitFlag == 1 {
-		fmt.Println("Tile has unit")
 		unitData := UnitData{}
 		if err := binary.Read(streamReader, binary.LittleEndian, &unitData); err != nil {
 			log.Fatal("Failed to load buffer: ", err)
 		}
-		fmt.Println("Unit data:", unitData)
+		fmt.Printf("Unit data: %+v\n", unitData)
 		unitDataPtr = &unitData
 
 		hasOtherUnitFlag := unsafeReadUint8(streamReader)
@@ -405,19 +470,17 @@ func readOtherTile(streamReader *io.SectionReader, tileDataHeader TileDataHeader
 			if err := binary.Read(streamReader, binary.LittleEndian, &previousUnitData); err != nil {
 				log.Fatal("Failed to load buffer: ", err)
 			}
-			fmt.Println("Previous unit data:", previousUnitData)
+			fmt.Printf("Previous unit data: %+v\n", previousUnitData)
 
-			flag1 := unsafeReadUint8(streamReader)
-			fmt.Println("Flag1:", flag1)
+			_ = unsafeReadUint8(streamReader)
 			bufferUnitData2 := readFixedList(streamReader, 7)
-			fmt.Println("bufferUnitData2:", bufferUnitData2)
-
 			bufferUnitData3 := readFixedList(streamReader, 7)
 			if bufferUnitData2[0] == 1 {
 				bufferUnitData3Remainder := readFixedList(streamReader, 4)
 				bufferUnitData3 = append(bufferUnitData3, bufferUnitData3Remainder...)
 			}
-			fmt.Println("bufferUnitData3:", bufferUnitData3)
+			bufferUnitData = append(bufferUnitData, bufferUnitData2...)
+			bufferUnitData = append(bufferUnitData, bufferUnitData3...)
 		} else {
 			bufferUnitFlag := unsafeReadUint8(streamReader)
 			bufferSize := 6
@@ -426,22 +489,15 @@ func readOtherTile(streamReader *io.SectionReader, tileDataHeader TileDataHeader
 			}
 
 			bufferUnit := readFixedList(streamReader, bufferSize)
-			fmt.Println("bufferUnit:", bufferUnit)
+			bufferUnitData = append(bufferUnitData, bufferUnit...)
 		}
 	}
 
 	playerVisibilityListSize := unsafeReadUint8(streamReader)
 	playerVisibilityList := readFixedList(streamReader, int(playerVisibilityListSize))
-	fmt.Println("PlayerVisibilityList:", playerVisibilityList)
-
 	hasRoad := unsafeReadUint8(streamReader)
-	fmt.Println("Has road:", hasRoad)
-
 	hasWaterRoute := unsafeReadUint8(streamReader)
-	fmt.Println("Has water route:", hasWaterRoute)
-
 	unknown := readFixedList(streamReader, 4)
-	fmt.Println("Unknown:", unknown)
 
 	hasCity := false
 	if improvementType == 1 {
@@ -449,13 +505,19 @@ func readOtherTile(streamReader *io.SectionReader, tileDataHeader TileDataHeader
 	}
 
 	return TileData{
-		Terrain:  int(tileDataHeader.Terrain),
-		Climate:  int(tileDataHeader.Climate),
-		Owner:    int(tileDataHeader.Owner),
-		Capital:  int(tileDataHeader.Capital),
-		HasCity:  hasCity,
-		CityName: "",
-		Unit:     unitDataPtr,
+		Header:           tileDataHeader,
+		Terrain:          int(tileDataHeader.Terrain),
+		Climate:          int(tileDataHeader.Climate),
+		Owner:            int(tileDataHeader.Owner),
+		Capital:          int(tileDataHeader.Capital),
+		HasCity:          hasCity,
+		CityName:         "",
+		Unit:             unitDataPtr,
+		BufferUnitData:   bufferUnitData,
+		PlayerVisibility: playerVisibilityList,
+		HasRoad:          hasRoad != 0,
+		HasWaterRoute:    hasWaterRoute != 0,
+		Unknown:          unknown,
 	}
 }
 
@@ -468,7 +530,7 @@ func readTileData(streamReader *io.SectionReader, tileData [][]TileData, mapWidt
 			if err := binary.Read(streamReader, binary.LittleEndian, &tileDataHeader); err != nil {
 				log.Fatal("Failed to load tileDataHeader: ", err)
 			}
-			fmt.Println(fmt.Sprintf("tileDataHeader (%v, %v): ", i, j, tileDataHeader))
+			// fmt.Println(fmt.Sprintf("tileDataHeader (%v, %v): ", i, j, tileDataHeader))
 
 			if int(tileDataHeader.WorldCoordinates[0]) != j || int(tileDataHeader.WorldCoordinates[1]) != i {
 				log.Fatal(fmt.Sprintf("File reached unexpected location. Iteration (%v, %v) isn't equal to world coordinates (%v, %v)",
@@ -479,14 +541,12 @@ func readTileData(streamReader *io.SectionReader, tileData [][]TileData, mapWidt
 			resourceType := -1
 			if resourceExistsFlag == 1 {
 				resourceType = int(unsafeReadUint16(streamReader))
-				fmt.Println("Resource exists, type:", resourceType)
 			}
 
 			improvementExistsFlag := unsafeReadUint8(streamReader)
 			improvementType := -1
 			if improvementExistsFlag == 1 {
 				improvementType = int(unsafeReadUint16(streamReader))
-				fmt.Println("Improvement exists, type: ", improvementType)
 			}
 
 			// If tile is city, read differently
@@ -497,6 +557,13 @@ func readTileData(streamReader *io.SectionReader, tileData [][]TileData, mapWidt
 				tileData[i][j] = readOtherTile(streamReader, tileDataHeader, resourceType, improvementType)
 			}
 
+			tileData[i][j].ResourceExists = resourceExistsFlag != 0
+			tileData[i][j].ResourceType = resourceType
+			tileData[i][j].ImprovementExists = improvementExistsFlag != 0
+			tileData[i][j].ImprovementType = improvementType
+
+			fmt.Printf(fmt.Sprintf("TileData (%v, %v): %+v\n", i, j, tileData[i][j]))
+
 			if tileData[i][j].Unit != nil {
 				allUnitData = append(allUnitData, *tileData[i][j].Unit)
 			}
@@ -505,7 +572,7 @@ func readTileData(streamReader *io.SectionReader, tileData [][]TileData, mapWidt
 
 	fmt.Println("Total number of units:", len(allUnitData))
 	for i := 0; i < len(allUnitData); i++ {
-		fmt.Println("Unit", i, ":", allUnitData[i])
+		fmt.Println(fmt.Sprintf("Unit %v: %+v", i, allUnitData[i]))
 	}
 }
 
@@ -743,7 +810,11 @@ func readAllActions(streamReader *io.SectionReader) {
 			}
 			fmt.Printf("Attack: %+v\n", action)
 		} else if actionType == 3 {
-			buffer = readFixedList(streamReader, 9)
+			action := ActionRecover{}
+			if err := binary.Read(streamReader, binary.LittleEndian, &action); err != nil {
+				log.Fatal("Failed to load action: ", err)
+			}
+			fmt.Printf("Recover: %+v\n", action)
 		} else if actionType == 5 {
 			action := ActionTrain{}
 			if err := binary.Read(streamReader, binary.LittleEndian, &action); err != nil {
@@ -769,7 +840,11 @@ func readAllActions(streamReader *io.SectionReader) {
 			}
 			fmt.Printf("Research: %+v\n", action)
 		} else if actionType == 9 {
-			buffer = readFixedList(streamReader, 9)
+			action := ActionDestroyImprovement{}
+			if err := binary.Read(streamReader, binary.LittleEndian, &action); err != nil {
+				log.Fatal("Failed to load action: ", err)
+			}
+			fmt.Printf("DestroyImprovement: %+v\n", action)
 		} else if actionType == 11 {
 			action := ActionCityReward{}
 			if err := binary.Read(streamReader, binary.LittleEndian, &action); err != nil {
@@ -777,9 +852,17 @@ func readAllActions(streamReader *io.SectionReader) {
 			}
 			fmt.Printf("CityReward: %+v\n", action)
 		} else if actionType == 13 {
-			buffer = readFixedList(streamReader, 9)
+			action := ActionPromote{}
+			if err := binary.Read(streamReader, binary.LittleEndian, &action); err != nil {
+				log.Fatal("Failed to load action: ", err)
+			}
+			fmt.Printf("Promote: %+v\n", action)
 		} else if actionType == 14 {
-			buffer = readFixedList(streamReader, 9)
+			action := ActionExamineRuins{}
+			if err := binary.Read(streamReader, binary.LittleEndian, &action); err != nil {
+				log.Fatal("Failed to load action: ", err)
+			}
+			fmt.Printf("ExamineRuins: %+v\n", action)
 		} else if actionType == 15 {
 			action := ActionEndTurn{}
 			if err := binary.Read(streamReader, binary.LittleEndian, &action); err != nil {
@@ -787,11 +870,19 @@ func readAllActions(streamReader *io.SectionReader) {
 			}
 			fmt.Printf("EndTurn: %+v\n", action)
 		} else if actionType == 16 {
-			buffer = readFixedList(streamReader, 11)
+			action := ActionUpgrade{}
+			if err := binary.Read(streamReader, binary.LittleEndian, &action); err != nil {
+				log.Fatal("Failed to load action: ", err)
+			}
+			fmt.Printf("Upgrade: %+v\n", action)
 		} else if actionType == 20 {
 			buffer = readFixedList(streamReader, 1)
 		} else if actionType == 21 {
-			buffer = readFixedList(streamReader, 9)
+			action := ActionCityLevelUp{}
+			if err := binary.Read(streamReader, binary.LittleEndian, &action); err != nil {
+				log.Fatal("Failed to load action: ", err)
+			}
+			fmt.Printf("CityLevelUp: %+v\n", action)
 		} else if actionType == 27 {
 			buffer = readFixedList(streamReader, 10)
 		} else if actionType == 28 {
