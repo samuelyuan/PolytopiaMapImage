@@ -12,13 +12,16 @@ import (
 func main() {
 	inputPtr := flag.String("input", "", "Input filename")
 	outputPtr := flag.String("output", "output.png", "Output filename")
+	modePtr := flag.String("mode", "image", "Output mode")
 
 	flag.Parse()
 
 	inputFilename := *inputPtr
 	outputFilename := *outputPtr
+	mode := *modePtr
 	fmt.Println("Input filename: ", inputFilename)
 	fmt.Println("Output filename: ", outputFilename)
+	fmt.Println("Mode:", mode)
 
 	saveFileData, err := fileio.ReadPolytopiaSaveFile(inputFilename)
 	if err != nil {
@@ -26,5 +29,11 @@ func main() {
 		return
 	}
 
-	graphics.SaveImage(outputFilename, graphics.DrawMap(saveFileData))
+	if mode == "image" {
+		graphics.SaveImage(outputFilename, graphics.DrawMap(saveFileData))
+	} else if mode == "replay" {
+		graphics.DrawReplay(saveFileData, outputFilename)
+	} else {
+		log.Fatal("Invalid mode:", mode)
+	}
 }

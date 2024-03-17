@@ -62,6 +62,7 @@ type TileData struct {
 	ImprovementType   int
 	HasCity           bool
 	CityName          string
+	CityData          *CityData
 	Unit              *UnitData
 	BufferUnitData    []byte
 	PlayerVisibility  []uint8
@@ -237,10 +238,13 @@ type DiplomacyData struct {
 }
 
 type PolytopiaSaveOutput struct {
-	MapHeight     int
-	MapWidth      int
-	OwnerTribeMap map[int]int
-	TileData      [][]TileData
+	MapHeight       int
+	MapWidth        int
+	OwnerTribeMap   map[int]int
+	InitialTileData [][]TileData
+	TileData        [][]TileData
+	MaxTurn         int
+	TurnCaptureMap  map[int][]ActionCaptureCity
 }
 
 func readVarString(reader *io.SectionReader, varName string) string {
@@ -430,6 +434,7 @@ func readExistingCityData(streamReader *io.SectionReader, tileDataHeader TileDat
 		Capital:          int(tileDataHeader.Capital),
 		HasCity:          true,
 		CityName:         cityName,
+		CityData:         &cityData,
 		Unit:             unitDataPtr,
 		BufferUnitData:   bufferUnitData,
 		PlayerVisibility: playerVisibilityList,
@@ -512,6 +517,7 @@ func readOtherTile(streamReader *io.SectionReader, tileDataHeader TileDataHeader
 		Capital:          int(tileDataHeader.Capital),
 		HasCity:          hasCity,
 		CityName:         "",
+		CityData:         nil,
 		Unit:             unitDataPtr,
 		BufferUnitData:   bufferUnitData,
 		PlayerVisibility: playerVisibilityList,
@@ -788,11 +794,14 @@ func buildOwnerTribeMap(allPlayerData []PlayerData) map[int]int {
 	return ownerTribeMap
 }
 
-func readAllActions(streamReader *io.SectionReader) {
+func readAllActions(streamReader *io.SectionReader) map[int][]ActionCaptureCity {
 	numActions := unsafeReadUint16(streamReader)
 	fmt.Println("Total actions:", numActions)
 
+	turnCaptureMap := make(map[int][]ActionCaptureCity)
+
 	fmt.Println("Reading all player actions:")
+	turn := 1
 	for i := 0; i < int(numActions); i++ {
 		actionType := unsafeReadUint16(streamReader)
 
@@ -833,6 +842,12 @@ func readAllActions(streamReader *io.SectionReader) {
 				log.Fatal("Failed to load action: ", err)
 			}
 			fmt.Printf("CaptureCity: %+v\n", action)
+
+			_, ok := turnCaptureMap[turn]
+			if !ok {
+				turnCaptureMap[turn] = make([]ActionCaptureCity, 0)
+			}
+			turnCaptureMap[turn] = append(turnCaptureMap[turn], action)
 		} else if actionType == 8 {
 			action := ActionResearch{}
 			if err := binary.Read(streamReader, binary.LittleEndian, &action); err != nil {
@@ -869,6 +884,11 @@ func readAllActions(streamReader *io.SectionReader) {
 				log.Fatal("Failed to load action: ", err)
 			}
 			fmt.Printf("EndTurn: %+v\n", action)
+
+			if action.PlayerId == 255 {
+				turn++
+				fmt.Println("Start new turn", turn)
+			}
 		} else if actionType == 16 {
 			action := ActionUpgrade{}
 			if err := binary.Read(streamReader, binary.LittleEndian, &action); err != nil {
@@ -899,6 +919,9 @@ func readAllActions(streamReader *io.SectionReader) {
 			fmt.Println("Index", i, ", action type:", actionType, ", buffer:", buffer)
 		}
 	}
+
+	fmt.Println("turnCaptureMap:", turnCaptureMap)
+	return turnCaptureMap
 }
 
 func ReadPolytopiaSaveFile(inputFilename string) (*PolytopiaSaveOutput, error) {
@@ -909,12 +932,11 @@ func ReadPolytopiaSaveFile(inputFilename string) (*PolytopiaSaveOutput, error) {
 	initialMapHeaderOutput := readMapHeader(streamReader)
 	fmt.Printf("initialMapHeaderOutput: %+v\n", initialMapHeaderOutput)
 
-	tileData := make([][]TileData, initialMapHeaderOutput.MapHeight)
+	initialTileData := make([][]TileData, initialMapHeaderOutput.MapHeight)
 	for i := 0; i < initialMapHeaderOutput.MapHeight; i++ {
-		tileData[i] = make([]TileData, initialMapHeaderOutput.MapWidth)
+		initialTileData[i] = make([]TileData, initialMapHeaderOutput.MapWidth)
 	}
-
-	readTileData(streamReader, tileData, initialMapHeaderOutput.MapWidth, initialMapHeaderOutput.MapHeight)
+	readTileData(streamReader, initialTileData, initialMapHeaderOutput.MapWidth, initialMapHeaderOutput.MapHeight)
 
 	ownerTribeMap := buildOwnerTribeMap(readAllPlayerData(streamReader))
 	fmt.Println("Owner to tribe map:", ownerTribeMap)
@@ -926,6 +948,10 @@ func ReadPolytopiaSaveFile(inputFilename string) (*PolytopiaSaveOutput, error) {
 	currentMapHeaderOutput := readMapHeader(streamReader)
 	fmt.Printf("currentMapHeaderOutput: %+v\n", currentMapHeaderOutput)
 
+	tileData := make([][]TileData, currentMapHeaderOutput.MapHeight)
+	for i := 0; i < currentMapHeaderOutput.MapHeight; i++ {
+		tileData[i] = make([]TileData, currentMapHeaderOutput.MapWidth)
+	}
 	readTileData(streamReader, tileData, currentMapHeaderOutput.MapWidth, currentMapHeaderOutput.MapHeight)
 
 	ownerTribeMap = buildOwnerTribeMap(readAllPlayerData(streamReader))
@@ -934,13 +960,16 @@ func ReadPolytopiaSaveFile(inputFilename string) (*PolytopiaSaveOutput, error) {
 	partAfterCurrentMap := readFixedList(streamReader, 2)
 	fmt.Println("PartAfterCurrentMap:", partAfterCurrentMap)
 
-	readAllActions(streamReader)
+	turnCaptureMap := readAllActions(streamReader)
 
 	output := &PolytopiaSaveOutput{
-		MapHeight:     initialMapHeaderOutput.MapHeight,
-		MapWidth:      initialMapHeaderOutput.MapWidth,
-		OwnerTribeMap: ownerTribeMap,
-		TileData:      tileData,
+		MapHeight:       initialMapHeaderOutput.MapHeight,
+		MapWidth:        initialMapHeaderOutput.MapWidth,
+		OwnerTribeMap:   ownerTribeMap,
+		InitialTileData: initialTileData,
+		TileData:        tileData,
+		MaxTurn:         int(currentMapHeaderOutput.MapHeaderInput.CurrentTurn),
+		TurnCaptureMap:  turnCaptureMap,
 	}
 	return output, nil
 }
