@@ -895,6 +895,10 @@ func readAllActions(streamReader *io.SectionReader) map[int][]ActionCaptureCity 
 				log.Fatal("Failed to load action: ", err)
 			}
 			fmt.Printf("Upgrade: %+v\n", action)
+		} else if actionType == 17 {
+			buffer = readFixedList(streamReader, 9)
+		} else if actionType == 18 {
+			buffer = readFixedList(streamReader, 9)
 		} else if actionType == 20 {
 			buffer = readFixedList(streamReader, 1)
 		} else if actionType == 21 {
@@ -903,6 +907,8 @@ func readAllActions(streamReader *io.SectionReader) map[int][]ActionCaptureCity 
 				log.Fatal("Failed to load action: ", err)
 			}
 			fmt.Printf("CityLevelUp: %+v\n", action)
+		} else if actionType == 24 {
+			buffer = readFixedList(streamReader, 9)
 		} else if actionType == 27 {
 			buffer = readFixedList(streamReader, 10)
 		} else if actionType == 28 {
@@ -920,7 +926,6 @@ func readAllActions(streamReader *io.SectionReader) map[int][]ActionCaptureCity 
 		}
 	}
 
-	fmt.Println("turnCaptureMap:", turnCaptureMap)
 	return turnCaptureMap
 }
 

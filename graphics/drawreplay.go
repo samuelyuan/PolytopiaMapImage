@@ -16,6 +16,39 @@ const (
 	GIF_DELAY = 100
 )
 
+var (
+	drawMapColors = []color.Color{
+		// terrain colors
+		color.RGBA{95, 149, 149, 255},
+		color.RGBA{47, 74, 93, 255},
+		color.RGBA{105, 125, 54, 255},
+		color.RGBA{238, 249, 255, 255},
+		// tribe colors
+		color.RGBA{0, 0, 0, 255},
+		color.RGBA{54, 226, 170, 255},
+		color.RGBA{243, 131, 129, 255},
+		color.RGBA{53, 37, 20, 255},
+		color.RGBA{255, 0, 153, 255},
+		color.RGBA{153, 102, 0, 255},
+		color.RGBA{0, 0, 255, 255},
+		color.RGBA{0, 255, 0, 255},
+		color.RGBA{171, 59, 214, 255},
+		color.RGBA{255, 255, 0, 255},
+		color.RGBA{39, 92, 74, 255},
+		color.RGBA{255, 255, 255, 255},
+		color.RGBA{204, 0, 0, 255},
+		color.RGBA{125, 35, 28, 255},
+		color.RGBA{255, 153, 0, 255},
+		color.RGBA{182, 161, 133, 255},
+		color.RGBA{194, 253, 0, 255},
+		color.RGBA{128, 128, 128, 255},
+		// mountain and forest colors
+		color.RGBA{89, 90, 86, 255},
+		color.RGBA{234, 244, 253, 255},
+		color.RGBA{53, 72, 44, 255},
+	}
+)
+
 type MapCoordinates struct {
 	Coordinates [2]int
 }
@@ -60,7 +93,6 @@ func captureCityTiles(
 
 func DrawReplay(saveData *fileio.PolytopiaSaveOutput, outputFilename string) {
 	cityTerritoryMap := buildCityToTerritoryMap(saveData)
-	fmt.Println("cityTerritoryMap:", cityTerritoryMap)
 
 	// Build initial map from turn 1
 	currentTileData := saveData.TileData
@@ -81,6 +113,7 @@ func DrawReplay(saveData *fileio.PolytopiaSaveOutput, outputFilename string) {
 	outGif := &gif.GIF{}
 	quantizer := quantize.MedianCutQuantizer{NumColor: 256}
 	var mapPalette color.Palette
+	mapPalette = drawMapColors
 
 	for turn := 1; turn <= saveData.MaxTurn; turn++ {
 		fmt.Println("Drawing frame for turn", turn)

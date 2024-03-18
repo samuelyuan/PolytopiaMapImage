@@ -143,8 +143,6 @@ func drawTerritoryTiles(dc *gg.Context, saveData *fileio.PolytopiaSaveOutput, ma
 
 			if terrain == 4 {
 				drawMountain(dc, x, y)
-			} else if terrain == 5 {
-				drawForest(dc, x, y)
 			}
 
 			// Draw cities
@@ -173,7 +171,7 @@ func drawBorders(dc *gg.Context, saveData *fileio.PolytopiaSaveOutput, mapHeight
 			}
 
 			tileColor := getPoliticalMapTileColor(saveData, i, j)
-
+			lineWidth := 1.5
 			for n := 0; n < len(neighbors); n++ {
 				newX := neighbors[n][0]
 				newY := neighbors[n][1]
@@ -185,13 +183,14 @@ func drawBorders(dc *gg.Context, saveData *fileio.PolytopiaSaveOutput, mapHeight
 
 						centerX := x1 + (radius / 2)
 						centerY := y1 + (radius / 2)
-						edgeX1 := centerX + (radius*math.Sqrt2/2)*math.Cos(angle1)
-						edgeY1 := centerY + (radius*math.Sqrt2/2)*math.Sin(angle1)
-						edgeX2 := centerX + (radius*math.Sqrt2/2)*math.Cos(angle2)
-						edgeY2 := centerY + (radius*math.Sqrt2/2)*math.Sin(angle2)
+
+						edgeX1 := centerX + ((radius-1)*math.Sqrt2/2)*math.Cos(angle1)
+						edgeY1 := centerY + ((radius-1)*math.Sqrt2/2)*math.Sin(angle1)
+						edgeX2 := centerX + ((radius-1)*math.Sqrt2/2)*math.Cos(angle2)
+						edgeY2 := centerY + ((radius-1)*math.Sqrt2/2)*math.Sin(angle2)
 
 						dc.SetRGB255(int(tileColor.R), int(tileColor.G), int(tileColor.B))
-						dc.SetLineWidth(1.5)
+						dc.SetLineWidth(lineWidth)
 						dc.DrawLine(edgeX1, edgeY1, edgeX2, edgeY2)
 						dc.Stroke()
 					}
