@@ -48,6 +48,34 @@ The .state file is compressed using LZ4. The file consists of the initial map st
 
 The header contains all of the game settings.
 
+| Type | Size | Description |
+| ---- | ---- | ----------- |
+| uint32 | 4 bytes | Version1 |
+| uint32 | 4 bytes | Version2 |
+| uint16 | 2 bytes | TotalActions |
+| uint32 | 4 bytes | CurrentTurn |
+| uint8 | 1 byte | CurrentPlayerIndex |
+| uint32 | 4 bytes | MaxUnitId |
+| uint8 | 1 byte | UnknownByte1 |
+| uint32 | 4 bytes | Seed |
+| uint32 | 4 bytes | TurnLimit |
+| byte[11] | 11 bytes | Unknown1 |
+| uint8 | 1 byte | GameMode1 |
+| uint8 | 1 byte | GameMode2 |
+| varstring | var bytes | Map name |
+| uint32 | 4 bytes | Map square size |
+| uint16 | 2 bytes | disabledTribesSize |
+| uint16 array | disabledTribesSize*2 bytes | Disabled tribes |
+| uint16 | 2 bytes | unlockedTribesSize |
+| uint16 array | unlockedTribesSize*2 bytes | Unlocked tribes |
+| uint16 | 2 bytes | Game difficulty |
+| uint32 | 4 bytes | Number of opponents |
+| byte array | 5+unlockedTribesSize bytes | Unknown |
+| uint32 | 4 bytes | selectedTribeSkinSize |
+| uint16 array | selectedTribeSkinSize*2 bytes | Tribe to skin map |
+| uint16 | 2 bytes | Map width |
+| uint16 | 2 bytes | Map height |
+
 ### Map Tiles
 
 The first two unsigned shorts contain the map width and height. The following data is a 2D array of tiles.

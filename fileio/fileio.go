@@ -595,23 +595,21 @@ func readMapHeader(streamReader *io.SectionReader) MapHeaderOutput {
 
 	disabledTribesSize := unsafeReadUint16(streamReader)
 	disabledTribesArr := make([]int, disabledTribesSize)
-	if disabledTribesSize > 0 {
-		for i := 0; i < int(disabledTribesSize); i++ {
-			disabledTribesArr[i] = int(unsafeReadUint16(streamReader))
-		}
+	for i := 0; i < int(disabledTribesSize); i++ {
+		disabledTribesArr[i] = int(unsafeReadUint16(streamReader))
 	}
 
-	unlockedTribesSize := unsafeReadUint32(streamReader)
-	unlockedTribesArr := make([]int, unlockedTribesSize-1)
-	for i := 0; i < int(unlockedTribesSize)-1; i++ {
+	unlockedTribesSize := unsafeReadUint16(streamReader)
+	unlockedTribesArr := make([]int, unlockedTribesSize)
+	for i := 0; i < int(unlockedTribesSize); i++ {
 		unlockedTribesArr[i] = int(unsafeReadUint16(streamReader))
 	}
 
 	gameDifficulty := unsafeReadUint16(streamReader)
 	numOpponents := unsafeReadUint32(streamReader)
 	unknownArr := readFixedList(streamReader, 5+int(unlockedTribesSize))
-	selectedTribeSkinSize := unsafeReadUint32(streamReader)
 
+	selectedTribeSkinSize := unsafeReadUint32(streamReader)
 	selectedTribeSkins := make(map[int]int)
 	for i := 0; i < int(selectedTribeSkinSize); i++ {
 		tribe := unsafeReadUint16(streamReader)
