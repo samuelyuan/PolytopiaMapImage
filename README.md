@@ -32,12 +32,15 @@ The mode is either "image" or "replay". The image mode will generate a screensho
 
 ## Examples
 
+Map Image
 <div style="display:inline-block;">
 <img src="https://raw.githubusercontent.com/samuelyuan/PolytopiaMapImage/master/examples/map.png" alt="map" width="300" height="300" />
 </div>
 
+Replay
 <div style="display:inline-block;">
 <img src="https://raw.githubusercontent.com/samuelyuan/PolytopiaMapImage/master/examples/replay.gif" alt="replay" width="300" height="300" />
+<img src="https://raw.githubusercontent.com/samuelyuan/PolytopiaMapImage/master/examples/pangea.gif" alt="pangea" width="300" height="300" />
 </div>
 
 ## File format

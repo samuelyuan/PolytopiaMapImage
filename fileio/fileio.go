@@ -822,6 +822,8 @@ func readAllActions(streamReader *io.SectionReader) map[int][]ActionCaptureCity 
 				log.Fatal("Failed to load action: ", err)
 			}
 			fmt.Printf("Recover: %+v\n", action)
+		} else if actionType == 4 {
+			buffer = readFixedList(streamReader, 9)
 		} else if actionType == 5 {
 			action := ActionTrain{}
 			if err := binary.Read(streamReader, binary.LittleEndian, &action); err != nil {
