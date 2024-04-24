@@ -72,15 +72,20 @@ type TileData struct {
 }
 
 type CityData struct {
-	CityLevel         int
-	CurrentPopulation int
-	TotalPopulation   int
-	Buffer1           []byte
-	CityName          string
-	FlagBeforeRewards int
-	CityRewards       []int
-	RebellionFlag     int
-	RebellionBuffer   []byte
+	CityLevel              int
+	CurrentPopulation      int
+	TotalPopulation        int
+	UnknownShort1          int
+	ParkBonus              int
+	UnknownShort2          int
+	UnknownShort3          int
+	ConnectedPlayerCapital int
+	UnknownByte1           int
+	CityName               string
+	FlagBeforeRewards      int
+	CityRewards            []int
+	RebellionFlag          int
+	RebellionBuffer        []byte
 }
 
 type ActionBuild struct {
@@ -181,7 +186,8 @@ type PlayerData struct {
 	TotalUnitsKilled     int
 	TotalUnitsLost       int
 	TotalTribesDestroyed int
-	UnknownBuffer1       []byte
+	ColorOverride        []byte
+	UnknownByte2         byte
 	UniqueImprovements   []int
 	DiplomacyArr         []DiplomacyData
 	DiplomacyMessages    []DiplomacyMessage
@@ -207,13 +213,13 @@ type UnitData struct {
 }
 
 type ImprovementData struct {
-	Level       uint16
-	Founded     uint16
-	Unknown1    [6]byte
-	BaseScore   uint16
-	Unknown2    [6]byte
-	UnknownInt1 uint16
-	Unknown3    [3]byte
+	Level        uint16
+	FoundedTurn  uint16
+	Unknown1     [6]byte
+	BaseScore    uint16
+	Unknown2     [6]byte
+	FoundedTribe uint8
+	Unknown3     [4]byte
 }
 
 type PlayerTaskData struct {
@@ -301,6 +307,14 @@ func unsafeReadUint8(reader *io.SectionReader) uint8 {
 	return unsignedIntValue
 }
 
+func unsafeReadInt8(reader *io.SectionReader) int8 {
+	signedIntValue := int8(0)
+	if err := binary.Read(reader, binary.LittleEndian, &signedIntValue); err != nil {
+		log.Fatal("Failed to load int8: ", err)
+	}
+	return signedIntValue
+}
+
 func readFixedList(streamReader *io.SectionReader, listSize int) []byte {
 	buffer := make([]byte, listSize)
 	if err := binary.Read(streamReader, binary.LittleEndian, &buffer); err != nil {
@@ -360,7 +374,12 @@ func readExistingCityData(streamReader *io.SectionReader, tileDataHeader TileDat
 	cityLevel := unsafeReadUint32(streamReader)
 	currentPopulation := unsafeReadInt16(streamReader)
 	totalPopulation := unsafeReadUint16(streamReader)
-	buffer1 := readFixedList(streamReader, 10)
+	unknownShort1 := unsafeReadInt16(streamReader)
+	parkBonus := unsafeReadInt16(streamReader)
+	unknownShort2 := unsafeReadInt16(streamReader)
+	unknownShort3 := unsafeReadInt16(streamReader)
+	connectedPlayerCapital := unsafeReadUint8(streamReader)
+	unknownByte1 := unsafeReadUint8(streamReader)
 	cityName := readVarString(streamReader, "CityName")
 
 	flagBeforeRewards := unsafeReadUint8(streamReader)
@@ -382,15 +401,20 @@ func readExistingCityData(streamReader *io.SectionReader, tileDataHeader TileDat
 	}
 
 	cityData := CityData{
-		CityLevel:         int(cityLevel),
-		CurrentPopulation: int(currentPopulation),
-		TotalPopulation:   int(totalPopulation),
-		Buffer1:           buffer1,
-		CityName:          cityName,
-		FlagBeforeRewards: int(flagBeforeRewards),
-		CityRewards:       cityRewards,
-		RebellionFlag:     int(rebellionFlag),
-		RebellionBuffer:   rebellionBuffer,
+		CityLevel:              int(cityLevel),
+		CurrentPopulation:      int(currentPopulation),
+		TotalPopulation:        int(totalPopulation),
+		UnknownShort1:          int(unknownShort1),
+		ParkBonus:              int(parkBonus),
+		UnknownShort2:          int(unknownShort2),
+		UnknownShort3:          int(unknownShort3),
+		ConnectedPlayerCapital: int(connectedPlayerCapital),
+		UnknownByte1:           int(unknownByte1),
+		CityName:               cityName,
+		FlagBeforeRewards:      int(flagBeforeRewards),
+		CityRewards:            cityRewards,
+		RebellionFlag:          int(rebellionFlag),
+		RebellionBuffer:        rebellionBuffer,
 	}
 	fmt.Printf("CityData: %+v\n", cityData)
 
@@ -699,7 +723,8 @@ func readPlayerData(streamReader *io.SectionReader) PlayerData {
 	totalKills := unsafeReadInt32(streamReader)
 	totalLosses := unsafeReadInt32(streamReader)
 	totalTribesDestroyed := unsafeReadInt32(streamReader)
-	unknownBuffer1 := readFixedList(streamReader, 5)
+	colorOverride := readFixedList(streamReader, 4)
+	unknownByte2 := unsafeReadUint8(streamReader)
 
 	playerUniqueImprovementsSize := unsafeReadUint16(streamReader)
 	playerUniqueImprovements := make([]int, int(playerUniqueImprovementsSize))
@@ -754,7 +779,8 @@ func readPlayerData(streamReader *io.SectionReader) PlayerData {
 		TotalUnitsKilled:     int(totalKills),
 		TotalUnitsLost:       int(totalLosses),
 		TotalTribesDestroyed: int(totalTribesDestroyed),
-		UnknownBuffer1:       unknownBuffer1,
+		ColorOverride:        colorOverride,
+		UnknownByte2:         unknownByte2,
 		UniqueImprovements:   playerUniqueImprovements,
 		DiplomacyArr:         diplomacyArr,
 		DiplomacyMessages:    diplomacyMessagesArr,
