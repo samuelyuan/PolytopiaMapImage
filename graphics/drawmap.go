@@ -65,6 +65,16 @@ func getPoliticalMapTileColor(saveData *fileio.PolytopiaSaveOutput, row int, col
 		return color.RGBA{0, 0, 0, 255}
 	}
 
+	for i := 0; i < len(saveData.PlayerData); i++ {
+		playerData := saveData.PlayerData[i]
+		if playerData.Id == tileOwner {
+			// override color
+			if playerData.ColorOverride[3] != 255 {
+				return color.RGBA{playerData.ColorOverride[2], playerData.ColorOverride[1], playerData.ColorOverride[0], 255}
+			}
+		}
+	}
+
 	switch tribe {
 	case 2: // Ai-Mo
 		return color.RGBA{54, 226, 170, 255}
