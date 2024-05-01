@@ -62,7 +62,7 @@ func buildCityToTerritoryMap(saveData *fileio.PolytopiaSaveOutput) map[string][]
 	for i := 0; i < mapHeight; i++ {
 		for j := 0; j < mapWidth; j++ {
 			tileData := saveData.TileData[i][j]
-			capitalCoordinates := tileData.Header.CapitalCoordinates
+			capitalCoordinates := tileData.CapitalCoordinates
 			cityKey := fmt.Sprintf("(%v,%v)", capitalCoordinates[0], capitalCoordinates[1])
 
 			_, ok := cityTerritoryMap[cityKey]
@@ -104,7 +104,7 @@ func DrawReplay(saveData *fileio.PolytopiaSaveOutput, outputFilename string) {
 			tileData := saveData.TileData[i][j]
 
 			if tileData.Capital > 0 {
-				capitalCoordinates := tileData.Header.CapitalCoordinates
+				capitalCoordinates := tileData.CapitalCoordinates
 				captureCityTiles(saveData, cityTerritoryMap, int(capitalCoordinates[0]), int(capitalCoordinates[1]), int(tileData.Capital))
 			}
 		}

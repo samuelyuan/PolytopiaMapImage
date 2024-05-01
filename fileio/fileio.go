@@ -51,24 +51,26 @@ type TileDataHeader struct {
 }
 
 type TileData struct {
-	Header            TileDataHeader
-	Terrain           int
-	Climate           int
-	Owner             int
-	Capital           int
-	ResourceExists    bool
-	ResourceType      int
-	ImprovementExists bool
-	ImprovementType   int
-	HasCity           bool
-	CityName          string
-	CityData          *CityData
-	Unit              *UnitData
-	BufferUnitData    []byte
-	PlayerVisibility  []uint8
-	HasRoad           bool
-	HasWaterRoute     bool
-	Unknown           []byte
+	WorldCoordinates   [2]int
+	Terrain            int
+	Climate            int
+	Altitude           int
+	Owner              int
+	Capital            int
+	CapitalCoordinates [2]int
+	ResourceExists     bool
+	ResourceType       int
+	ImprovementExists  bool
+	ImprovementType    int
+	HasCity            bool
+	CityName           string
+	CityData           *CityData
+	Unit               *UnitData
+	BufferUnitData     []byte
+	PlayerVisibility   []uint8
+	HasRoad            bool
+	HasWaterRoute      bool
+	Unknown            []byte
 }
 
 type CityData struct {
@@ -537,24 +539,26 @@ func readTileData(streamReader *io.SectionReader, tileData [][]TileData, mapWidt
 			}
 
 			tileData[i][j] = TileData{
-				Header:            tileDataHeader,
-				Terrain:           int(tileDataHeader.Terrain),
-				Climate:           int(tileDataHeader.Climate),
-				Owner:             int(tileDataHeader.Owner),
-				Capital:           int(tileDataHeader.Capital),
-				HasCity:           hasCity,
-				CityName:          cityName,
-				CityData:          cityDataPtr,
-				Unit:              unitDataPtr,
-				BufferUnitData:    bufferUnitData,
-				PlayerVisibility:  playerVisibilityList,
-				HasRoad:           hasRoad != 0,
-				HasWaterRoute:     hasWaterRoute != 0,
-				Unknown:           unknown,
-				ResourceExists:    resourceExistsFlag != 0,
-				ResourceType:      resourceType,
-				ImprovementExists: improvementExistsFlag != 0,
-				ImprovementType:   improvementType,
+				WorldCoordinates:   [2]int{int(tileDataHeader.WorldCoordinates[0]), int(tileDataHeader.WorldCoordinates[1])},
+				Terrain:            int(tileDataHeader.Terrain),
+				Climate:            int(tileDataHeader.Climate),
+				Altitude:           int(tileDataHeader.Altitude),
+				Owner:              int(tileDataHeader.Owner),
+				Capital:            int(tileDataHeader.Capital),
+				CapitalCoordinates: [2]int{int(tileDataHeader.CapitalCoordinates[0]), int(tileDataHeader.CapitalCoordinates[1])},
+				HasCity:            hasCity,
+				CityName:           cityName,
+				CityData:           cityDataPtr,
+				Unit:               unitDataPtr,
+				BufferUnitData:     bufferUnitData,
+				PlayerVisibility:   playerVisibilityList,
+				HasRoad:            hasRoad != 0,
+				HasWaterRoute:      hasWaterRoute != 0,
+				Unknown:            unknown,
+				ResourceExists:     resourceExistsFlag != 0,
+				ResourceType:       resourceType,
+				ImprovementExists:  improvementExistsFlag != 0,
+				ImprovementType:    improvementType,
 			}
 			fmt.Printf(fmt.Sprintf("TileData (%v, %v): %+v\n", i, j, tileData[i][j]))
 
