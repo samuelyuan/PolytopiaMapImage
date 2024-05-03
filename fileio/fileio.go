@@ -62,9 +62,7 @@ type TileData struct {
 	ResourceType       int
 	ImprovementExists  bool
 	ImprovementType    int
-	HasCity            bool
-	CityName           string
-	CityData           *CityData
+	ImprovementData    *ImprovementData
 	Unit               *UnitData
 	BufferUnitData     []byte
 	PlayerVisibility   []uint8
@@ -73,15 +71,15 @@ type TileData struct {
 	Unknown            []byte
 }
 
-type CityData struct {
-	CityLevel              int
+type ImprovementData struct {
+	Level                  int
 	FoundedTurn            int
 	CurrentPopulation      int
 	TotalPopulation        int
-	UnknownShort1          int
-	ParkBonus              int
-	UnknownShort2          int
-	UnknownShort3          int
+	Production             int
+	BaseScore              int
+	BorderSize             int // For cities, 1 is default, 2 is expanded border
+	UpgradeCount           int // For cities, seems to be -1 * (level - 1). Level 1 is starting point and no upgrades.
 	ConnectedPlayerCapital int
 	HasCityName            int
 	CityName               string
@@ -213,21 +211,6 @@ type UnitData struct {
 	Attacked           bool
 	Flipped            bool
 	CreatedTurn        uint16
-}
-
-type ImprovementData struct {
-	Level                  uint16
-	FoundedTurn            uint16
-	CurrentPopulation      uint16
-	TotalPopulation        uint16
-	UnknownShort1          uint16
-	BaseScore              uint16
-	Unknown2               [2]uint16
-	ConnectedPlayerCapital uint8
-	HasCityName            uint8
-	FoundedTribe           uint8
-	RewardsSize            uint16
-	RebellionFlag          uint16
 }
 
 type PlayerTaskData struct {
@@ -379,26 +362,23 @@ func buildReaderForDecompressedFile(inputFilename string) (*bytes.Reader, int) {
 	return bytes.NewReader(decompressedContents), decompressedLength
 }
 
-func readCityData(streamReader *io.SectionReader) CityData {
-	cityLevel := unsafeReadUint16(streamReader)
-	foundedTurn := unsafeReadInt16(streamReader)
+func readImprovementData(streamReader *io.SectionReader) ImprovementData {
+	level := unsafeReadUint16(streamReader)
+	foundedTurn := unsafeReadUint16(streamReader)
 	currentPopulation := unsafeReadInt16(streamReader)
 	totalPopulation := unsafeReadUint16(streamReader)
-	unknownShort1 := unsafeReadInt16(streamReader)
-	parkBonus := unsafeReadInt16(streamReader)
-	unknownShort2 := unsafeReadInt16(streamReader)
-	unknownShort3 := unsafeReadInt16(streamReader)
+	production := unsafeReadUint16(streamReader)
+	baseScore := unsafeReadUint16(streamReader)
+	borderSize := unsafeReadUint16(streamReader)
+	upgradeCount := unsafeReadInt16(streamReader)
 	connectedPlayerCapital := unsafeReadUint8(streamReader)
 	hasCityName := unsafeReadUint8(streamReader)
-	if hasCityName != 1 {
-		log.Fatal("City is missing name")
+	cityName := ""
+	if hasCityName == 1 {
+		cityName = readVarString(streamReader, "CityName")
 	}
-	cityName := readVarString(streamReader, "CityName")
 
 	foundedTribe := unsafeReadUint8(streamReader)
-	if foundedTribe != 0 {
-		log.Fatal("foundedTribe isn't 0")
-	}
 
 	cityRewardsSize := unsafeReadUint16(streamReader)
 	cityRewards := make([]int, cityRewardsSize)
@@ -413,15 +393,15 @@ func readCityData(streamReader *io.SectionReader) CityData {
 		rebellionBuffer = readFixedList(streamReader, 2)
 	}
 
-	return CityData{
-		CityLevel:              int(cityLevel),
+	return ImprovementData{
+		Level:                  int(level),
 		FoundedTurn:            int(foundedTurn),
 		CurrentPopulation:      int(currentPopulation),
 		TotalPopulation:        int(totalPopulation),
-		UnknownShort1:          int(unknownShort1),
-		ParkBonus:              int(parkBonus),
-		UnknownShort2:          int(unknownShort2),
-		UnknownShort3:          int(unknownShort3),
+		Production:             int(production),
+		BaseScore:              int(baseScore),
+		BorderSize:             int(borderSize),
+		UpgradeCount:           int(upgradeCount),
 		ConnectedPlayerCapital: int(connectedPlayerCapital),
 		HasCityName:            int(hasCityName),
 		CityName:               cityName,
@@ -460,19 +440,11 @@ func readTileData(streamReader *io.SectionReader, tileData [][]TileData, mapWidt
 				improvementType = int(unsafeReadUint16(streamReader))
 			}
 
-			// If tile is city, read differently
-			var cityData CityData
-			if tileDataHeader.Owner > 0 && resourceType == -1 && improvementType == 1 {
-				// No resource, but has improvement that is city
-				cityData = readCityData(streamReader)
-				fmt.Printf("CityData: %+v\n", cityData)
-			} else if improvementType != -1 {
-				// Has improvement and read improvement data
-				improvementData := ImprovementData{}
-				if err := binary.Read(streamReader, binary.LittleEndian, &improvementData); err != nil {
-					log.Fatal("Failed to load buffer: ", err)
-				}
+			var improvementDataPtr *ImprovementData
+			if improvementType != -1 {
+				improvementData := readImprovementData(streamReader)
 				fmt.Printf("Improvement data: %+v\n", improvementData)
+				improvementDataPtr = &improvementData
 			}
 
 			// Read unit data
@@ -526,18 +498,6 @@ func readTileData(streamReader *io.SectionReader, tileData [][]TileData, mapWidt
 			hasWaterRoute := unsafeReadUint8(streamReader)
 			unknown := readFixedList(streamReader, 4)
 
-			hasCity := false
-			cityName := ""
-			var cityDataPtr *CityData
-			if improvementType == 1 {
-				hasCity = true
-
-				if tileDataHeader.Owner > 0 {
-					cityName = cityData.CityName
-					cityDataPtr = &cityData
-				}
-			}
-
 			tileData[i][j] = TileData{
 				WorldCoordinates:   [2]int{int(tileDataHeader.WorldCoordinates[0]), int(tileDataHeader.WorldCoordinates[1])},
 				Terrain:            int(tileDataHeader.Terrain),
@@ -546,9 +506,7 @@ func readTileData(streamReader *io.SectionReader, tileData [][]TileData, mapWidt
 				Owner:              int(tileDataHeader.Owner),
 				Capital:            int(tileDataHeader.Capital),
 				CapitalCoordinates: [2]int{int(tileDataHeader.CapitalCoordinates[0]), int(tileDataHeader.CapitalCoordinates[1])},
-				HasCity:            hasCity,
-				CityName:           cityName,
-				CityData:           cityDataPtr,
+				ImprovementData:    improvementDataPtr,
 				Unit:               unitDataPtr,
 				BufferUnitData:     bufferUnitData,
 				PlayerVisibility:   playerVisibilityList,

@@ -134,8 +134,9 @@ func DrawReplay(saveData *fileio.PolytopiaSaveOutput, outputFilename string) {
 			saveData.TileData[cityCoordinates1][cityCoordinates0].Owner = int(captureEvent.PlayerId)
 
 			// If city hasn't been claimed by any player, assign the city name
-			if saveData.TileData[cityCoordinates1][cityCoordinates0].CityName == "" {
-				saveData.TileData[cityCoordinates1][cityCoordinates0].CityName = currentTileData[cityCoordinates1][cityCoordinates0].CityName
+			if saveData.TileData[cityCoordinates1][cityCoordinates0].ImprovementData != nil &&
+				saveData.TileData[cityCoordinates1][cityCoordinates0].ImprovementData.CityName == "" {
+				saveData.TileData[cityCoordinates1][cityCoordinates0].ImprovementData.CityName = currentTileData[cityCoordinates1][cityCoordinates0].ImprovementData.CityName
 			}
 
 			captureCityTiles(saveData, cityTerritoryMap, cityCoordinates0, cityCoordinates1, int(captureEvent.PlayerId))

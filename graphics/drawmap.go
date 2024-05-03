@@ -156,7 +156,7 @@ func drawTerritoryTiles(dc *gg.Context, saveData *fileio.PolytopiaSaveOutput, ma
 			}
 
 			// Draw cities
-			if tileData.HasCity {
+			if tileData.ImprovementData != nil && tileData.ImprovementType == 1 {
 				if tileData.Owner > 0 {
 					// Capital city
 					cityColor := getPoliticalMapTileColor(saveData, i, j)
@@ -219,7 +219,10 @@ func drawCityNames(dc *gg.Context, saveData *fileio.PolytopiaSaveOutput, mapHeig
 			x, y := getImagePosition(mapHeight-i, j)
 
 			tile := saveData.TileData[i][j]
-			cityName := string(tile.CityName[:])
+			cityName := ""
+			if tile.ImprovementData != nil && tile.ImprovementType == 1 {
+				cityName = tile.ImprovementData.CityName
+			}
 			if len(cityName) == 0 {
 				continue
 			}
