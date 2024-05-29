@@ -51,24 +51,28 @@ type TileDataHeader struct {
 }
 
 type TileData struct {
-	WorldCoordinates   [2]int
-	Terrain            int
-	Climate            int
-	Altitude           int
-	Owner              int
-	Capital            int
-	CapitalCoordinates [2]int
-	ResourceExists     bool
-	ResourceType       int
-	ImprovementExists  bool
-	ImprovementType    int
-	ImprovementData    *ImprovementData
-	Unit               *UnitData
-	BufferUnitData     []byte
-	PlayerVisibility   []uint8
-	HasRoad            bool
-	HasWaterRoute      bool
-	Unknown            []byte
+	WorldCoordinates           [2]int
+	Terrain                    int
+	Climate                    int
+	Altitude                   int
+	Owner                      int
+	Capital                    int
+	CapitalCoordinates         [2]int
+	ResourceExists             bool
+	ResourceType               int
+	ImprovementExists          bool
+	ImprovementType            int
+	ImprovementData            *ImprovementData
+	Unit                       *UnitData
+	PassengerUnit              *UnitData
+	UnitEffectData             []int // flags: 0 - ice, 1 - poison, 2 - boost, 3 - invisible
+	UnitDirectionData          []int // contains direction flag (0 - southwest, 1 - west, 2 - northwest, 3 - north, 4 - northeast, 5 - east, 6 - southwest, 7 - south)
+	PassengerUnitEffectData    []int
+	PassengerUnitDirectionData []int
+	PlayerVisibility           []int
+	HasRoad                    bool
+	HasWaterRoute              bool
+	Unknown                    []int
 }
 
 type ImprovementData struct {
@@ -86,7 +90,7 @@ type ImprovementData struct {
 	FoundedTribe           int
 	CityRewards            []int
 	RebellionFlag          int
-	RebellionBuffer        []byte
+	RebellionBuffer        []int
 }
 
 type ActionBuild struct {
@@ -176,7 +180,7 @@ type PlayerData struct {
 	Tribe                int
 	UnknownByte1         int
 	UnknownInt1          int
-	UnknownArr1          []int
+	UnknownArr1          []PlayerUnknownData
 	Currency             int
 	Score                int
 	UnknownInt2          int
@@ -187,21 +191,30 @@ type PlayerData struct {
 	TotalUnitsKilled     int
 	TotalUnitsLost       int
 	TotalTribesDestroyed int
-	ColorOverride        []byte
+	OverrideColor        []int
 	UnknownByte2         byte
 	UniqueImprovements   []int
 	DiplomacyArr         []DiplomacyData
 	DiplomacyMessages    []DiplomacyMessage
 	DestroyedByTribe     int
 	DestroyedTurn        int
-	UnknownBuffer2       []byte
+	UnknownBuffer2       []int
+}
+
+type PlayerUnknownData struct {
+	PlayerId int
+	Unknown1 int
+	Unknown2 int
+	Unknown3 int
+	Unknown4 int
 }
 
 type UnitData struct {
 	Id                 uint32
 	Owner              uint8
 	UnitType           uint16
-	Unknown            [8]byte // seems to be all zeros
+	FollowerUnitId     uint32 // only initialized for cymanti centipedes and segments
+	LeaderUnitId       uint32 // only initialized for cymanti centipedes and segments
 	CurrentCoordinates [2]int32
 	HomeCoordinates    [2]int32
 	Health             uint16 // should be divided by 10 to get value ingame
@@ -215,7 +228,7 @@ type UnitData struct {
 
 type PlayerTaskData struct {
 	Type   int
-	Buffer []byte
+	Buffer []int
 }
 
 type DiplomacyMessage struct {
@@ -315,6 +328,14 @@ func readFixedList(streamReader *io.SectionReader, listSize int) []byte {
 	return buffer
 }
 
+func convertByteListToInt(oldArr []byte) []int {
+	newArr := make([]int, len(oldArr))
+	for i := 0; i < len(newArr); i++ {
+		newArr[i] = int(oldArr[i])
+	}
+	return newArr
+}
+
 func buildReaderForDecompressedFile(inputFilename string) (*bytes.Reader, int) {
 	inputFile, err := os.Open(inputFilename)
 	defer inputFile.Close()
@@ -367,9 +388,9 @@ func readImprovementData(streamReader *io.SectionReader) ImprovementData {
 	foundedTurn := unsafeReadUint16(streamReader)
 	currentPopulation := unsafeReadInt16(streamReader)
 	totalPopulation := unsafeReadUint16(streamReader)
-	production := unsafeReadUint16(streamReader)
-	baseScore := unsafeReadUint16(streamReader)
-	borderSize := unsafeReadUint16(streamReader)
+	production := unsafeReadInt16(streamReader)
+	baseScore := unsafeReadInt16(streamReader)
+	borderSize := unsafeReadInt16(streamReader)
 	upgradeCount := unsafeReadInt16(streamReader)
 	connectedPlayerCapital := unsafeReadUint8(streamReader)
 	hasCityName := unsafeReadUint8(streamReader)
@@ -388,9 +409,9 @@ func readImprovementData(streamReader *io.SectionReader) ImprovementData {
 	}
 
 	rebellionFlag := unsafeReadUint16(streamReader)
-	var rebellionBuffer []byte
+	var rebellionBuffer []int
 	if rebellionFlag != 0 {
-		rebellionBuffer = readFixedList(streamReader, 2)
+		rebellionBuffer = convertByteListToInt(readFixedList(streamReader, 2))
 	}
 
 	return ImprovementData{
@@ -450,7 +471,12 @@ func readTileData(streamReader *io.SectionReader, tileData [][]TileData, mapWidt
 			// Read unit data
 			hasUnitFlag := unsafeReadUint8(streamReader)
 			var unitDataPtr *UnitData
-			bufferUnitData := make([]byte, 0)
+			var passengerUnitDataPtr *UnitData
+
+			unitEffectData := make([]int, 0)
+			unitDirectionData := make([]byte, 0)
+			passengerUnitEffectData := make([]int, 0)
+			passengerUnitDirectionData := make([]byte, 0)
 			if hasUnitFlag == 1 {
 				unitData := UnitData{}
 				if err := binary.Read(streamReader, binary.LittleEndian, &unitData); err != nil {
@@ -462,61 +488,76 @@ func readTileData(streamReader *io.SectionReader, tileData [][]TileData, mapWidt
 				hasOtherUnitFlag := unsafeReadUint8(streamReader)
 				if hasOtherUnitFlag == 1 {
 					// If unit embarks or disembarks, a new unit is created in the backend, but it's still the same unit in the game
-					fmt.Println("Tile has previous unit data before transition")
-					previousUnitData := UnitData{}
-					if err := binary.Read(streamReader, binary.LittleEndian, &previousUnitData); err != nil {
+					fmt.Println("Tile has passenger unit data")
+					passengerUnitData := UnitData{}
+					if err := binary.Read(streamReader, binary.LittleEndian, &passengerUnitData); err != nil {
 						log.Fatal("Failed to load buffer: ", err)
 					}
-					fmt.Printf("Previous unit data: %+v\n", previousUnitData)
+					fmt.Printf("Passenger unit data: %+v\n", passengerUnitData)
+					passengerUnitDataPtr = &passengerUnitData
 
-					_ = unsafeReadUint8(streamReader)
-					bufferUnitData2 := readFixedList(streamReader, 7)
-					bufferUnitData3 := readFixedList(streamReader, 7)
-					if bufferUnitData2[0] == 1 {
-						bufferUnitData3Remainder := readFixedList(streamReader, 4)
-						bufferUnitData3 = append(bufferUnitData3, bufferUnitData3Remainder...)
-						fmt.Println("Longer buffer3")
+					// might be other unit flag for passenger unit
+					// should always be zero because passenger unit can't carry another unit
+					unknownFlag := int(unsafeReadUint8(streamReader))
+					if unknownFlag != 0 {
+						log.Fatal("Passenger unit's other unit flag isn't zero")
 					}
-					bufferUnitData = append(bufferUnitData, bufferUnitData2...)
-					bufferUnitData = append(bufferUnitData, bufferUnitData3...)
-					fmt.Println(fmt.Sprintf("bufferUnit2: %v, bufferUnit3: %v", bufferUnitData2, bufferUnitData3))
+
+					passengerUnitEffectCount := int(unsafeReadUint16(streamReader))
+					passengerUnitEffectData = make([]int, 0)
+					for statusIndex := 0; statusIndex < passengerUnitEffectCount; statusIndex++ {
+						passengerUnitEffectData = append(passengerUnitEffectData, int(unsafeReadUint16(streamReader)))
+					}
+					passengerUnitDirectionData = readFixedList(streamReader, 5)
+
+					unitEffectCount := int(unsafeReadUint16(streamReader))
+					unitEffectData = make([]int, 0)
+					for statusIndex := 0; statusIndex < unitEffectCount; statusIndex++ {
+						unitEffectData = append(unitEffectData, int(unsafeReadUint16(streamReader)))
+					}
+					unitDirectionData = readFixedList(streamReader, 5)
+					fmt.Println("Passenger Unit effect data:", passengerUnitEffectData, ", direction data:", passengerUnitDirectionData)
+					fmt.Println("Unit effect data:", unitEffectData, ", direction data:", unitDirectionData)
 				} else {
-					bufferUnitFlag := unsafeReadUint8(streamReader)
-					bufferSize := 6
-					if bufferUnitFlag == 1 {
-						bufferSize = 8
+					unitEffectCount := int(unsafeReadUint16(streamReader))
+					unitEffectData = make([]int, 0)
+					for statusIndex := 0; statusIndex < unitEffectCount; statusIndex++ {
+						unitEffectData = append(unitEffectData, int(unsafeReadUint16(streamReader)))
 					}
-
-					bufferUnitData = readFixedList(streamReader, bufferSize)
-					fmt.Println(fmt.Sprintf("bufferUnitFlag: %v, bufferUnit: %v", bufferUnitFlag, bufferUnitData))
+					unitDirectionData = readFixedList(streamReader, 5)
+					fmt.Println("Unit effect data:", unitEffectData, ", direction data:", unitDirectionData)
 				}
 			}
 
 			playerVisibilityListSize := unsafeReadUint8(streamReader)
-			playerVisibilityList := readFixedList(streamReader, int(playerVisibilityListSize))
+			playerVisibilityList := convertByteListToInt(readFixedList(streamReader, int(playerVisibilityListSize)))
 			hasRoad := unsafeReadUint8(streamReader)
 			hasWaterRoute := unsafeReadUint8(streamReader)
-			unknown := readFixedList(streamReader, 4)
+			unknown := convertByteListToInt(readFixedList(streamReader, 4))
 
 			tileData[i][j] = TileData{
-				WorldCoordinates:   [2]int{int(tileDataHeader.WorldCoordinates[0]), int(tileDataHeader.WorldCoordinates[1])},
-				Terrain:            int(tileDataHeader.Terrain),
-				Climate:            int(tileDataHeader.Climate),
-				Altitude:           int(tileDataHeader.Altitude),
-				Owner:              int(tileDataHeader.Owner),
-				Capital:            int(tileDataHeader.Capital),
-				CapitalCoordinates: [2]int{int(tileDataHeader.CapitalCoordinates[0]), int(tileDataHeader.CapitalCoordinates[1])},
-				ImprovementData:    improvementDataPtr,
-				Unit:               unitDataPtr,
-				BufferUnitData:     bufferUnitData,
-				PlayerVisibility:   playerVisibilityList,
-				HasRoad:            hasRoad != 0,
-				HasWaterRoute:      hasWaterRoute != 0,
-				Unknown:            unknown,
-				ResourceExists:     resourceExistsFlag != 0,
-				ResourceType:       resourceType,
-				ImprovementExists:  improvementExistsFlag != 0,
-				ImprovementType:    improvementType,
+				WorldCoordinates:           [2]int{int(tileDataHeader.WorldCoordinates[0]), int(tileDataHeader.WorldCoordinates[1])},
+				Terrain:                    int(tileDataHeader.Terrain),
+				Climate:                    int(tileDataHeader.Climate),
+				Altitude:                   int(tileDataHeader.Altitude),
+				Owner:                      int(tileDataHeader.Owner),
+				Capital:                    int(tileDataHeader.Capital),
+				CapitalCoordinates:         [2]int{int(tileDataHeader.CapitalCoordinates[0]), int(tileDataHeader.CapitalCoordinates[1])},
+				ImprovementData:            improvementDataPtr,
+				Unit:                       unitDataPtr,
+				PassengerUnit:              passengerUnitDataPtr,
+				UnitEffectData:             unitEffectData,
+				UnitDirectionData:          convertByteListToInt(unitDirectionData),
+				PassengerUnitEffectData:    passengerUnitEffectData,
+				PassengerUnitDirectionData: convertByteListToInt(passengerUnitDirectionData),
+				PlayerVisibility:           playerVisibilityList,
+				HasRoad:                    hasRoad != 0,
+				HasWaterRoute:              hasWaterRoute != 0,
+				Unknown:                    unknown,
+				ResourceExists:             resourceExistsFlag != 0,
+				ResourceType:               resourceType,
+				ImprovementExists:          improvementExistsFlag != 0,
+				ImprovementType:            improvementType,
 			}
 			fmt.Printf(fmt.Sprintf("TileData (%v, %v): %+v\n", i, j, tileData[i][j]))
 
@@ -601,11 +642,17 @@ func readPlayerData(streamReader *io.SectionReader) PlayerData {
 	unknownInt1 := unsafeReadUint32(streamReader)
 
 	unknownArrLen1 := unsafeReadUint16(streamReader)
-	unknownArr1 := make([]int, 0)
+	unknownArr1 := make([]PlayerUnknownData, 0)
 	for i := 0; i < int(unknownArrLen1); i++ {
-		value1 := unsafeReadUint8(streamReader)
+		playerIdOther := unsafeReadUint8(streamReader)
 		value2 := readFixedList(streamReader, 4)
-		unknownArr1 = append(unknownArr1, int(value1), int(value2[0]), int(value2[1]), int(value2[2]), int(value2[3]))
+		unknownArr1 = append(unknownArr1, PlayerUnknownData{
+			PlayerId: int(playerIdOther),
+			Unknown1: int(value2[0]),
+			Unknown2: int(value2[1]),
+			Unknown3: int(value2[2]),
+			Unknown4: int(value2[3]),
+		})
 	}
 
 	currency := unsafeReadUint32(streamReader)
@@ -642,14 +689,14 @@ func readPlayerData(streamReader *io.SectionReader) PlayerData {
 		}
 		taskArr[i] = PlayerTaskData{
 			Type:   int(taskType),
-			Buffer: buffer,
+			Buffer: convertByteListToInt(buffer),
 		}
 	}
 
 	totalKills := unsafeReadInt32(streamReader)
 	totalLosses := unsafeReadInt32(streamReader)
 	totalTribesDestroyed := unsafeReadInt32(streamReader)
-	colorOverride := readFixedList(streamReader, 4)
+	overrideColor := convertByteListToInt(readFixedList(streamReader, 4))
 	unknownByte2 := unsafeReadUint8(streamReader)
 
 	playerUniqueImprovementsSize := unsafeReadUint16(streamReader)
@@ -683,7 +730,7 @@ func readPlayerData(streamReader *io.SectionReader) PlayerData {
 
 	destroyedByTribe := unsafeReadUint8(streamReader)
 	destroyedTurn := unsafeReadUint32(streamReader)
-	unknownBuffer2 := readFixedList(streamReader, 14)
+	unknownBuffer2 := convertByteListToInt(readFixedList(streamReader, 14))
 
 	return PlayerData{
 		Id:                   int(playerId),
@@ -705,7 +752,7 @@ func readPlayerData(streamReader *io.SectionReader) PlayerData {
 		TotalUnitsKilled:     int(totalKills),
 		TotalUnitsLost:       int(totalLosses),
 		TotalTribesDestroyed: int(totalTribesDestroyed),
-		ColorOverride:        colorOverride,
+		OverrideColor:        overrideColor,
 		UnknownByte2:         unknownByte2,
 		UniqueImprovements:   playerUniqueImprovements,
 		DiplomacyArr:         diplomacyArr,

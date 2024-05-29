@@ -83,6 +83,8 @@ The header contains all of the game settings.
 
 The first two unsigned shorts contain the map width and height. The following data is a 2D array of tiles.
 
+The tile data contains resource data, improvement data, unit data if they exist for that tile.
+
 ### Player Data
 
 A list of all players in the game.
