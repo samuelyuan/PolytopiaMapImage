@@ -202,6 +202,8 @@ func readAllActions(streamReader *io.SectionReader) map[int][]ActionCaptureCity 
 			fmt.Printf("CityLevelUp: %+v\n", action)
 		} else if actionType == 24 {
 			buffer = readFixedList(streamReader, 9)
+		} else if actionType == 25 {
+			buffer = readFixedList(streamReader, 9)
 		} else if actionType == 27 {
 			buffer = readFixedList(streamReader, 10)
 		} else if actionType == 28 {

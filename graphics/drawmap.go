@@ -138,6 +138,22 @@ func drawForest(dc *gg.Context, imageX float64, imageY float64) {
 	dc.Fill()
 }
 
+func drawIce(dc *gg.Context, imageX float64, imageY float64) {
+	dc.MoveTo(imageX, imageY)
+	dc.LineTo(imageX, imageY+radius)
+	dc.LineTo(imageX+radius, imageY+radius)
+	dc.ClosePath()
+	dc.SetRGB255(147, 191, 236) // light blue
+	dc.Fill()
+
+	dc.MoveTo(imageX, imageY)
+	dc.LineTo(imageX+radius, imageY)
+	dc.LineTo(imageX+radius, imageY+radius)
+	dc.ClosePath()
+	dc.SetRGB255(69, 140, 222) // dark blue
+	dc.Fill()
+}
+
 func drawTerritoryTiles(dc *gg.Context, saveData *fileio.PolytopiaSaveOutput, mapHeight int, mapWidth int) {
 	for i := 0; i < mapHeight; i++ {
 		for j := 0; j < mapWidth; j++ {
@@ -153,6 +169,8 @@ func drawTerritoryTiles(dc *gg.Context, saveData *fileio.PolytopiaSaveOutput, ma
 
 			if terrain == 4 {
 				drawMountain(dc, x, y)
+			} else if terrain == 6 {
+				drawIce(dc, x, y)
 			}
 
 			// Draw cities
