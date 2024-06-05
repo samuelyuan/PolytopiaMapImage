@@ -18,26 +18,39 @@ type MapHeaderInput struct {
 	CurrentTurn        uint32
 	CurrentPlayerIndex uint8
 	MaxUnitId          uint32
-	UnknownByte1       uint8
-	Seed               uint32
+	CurrentGameState   uint8
+	Seed               int32
 	TurnLimit          uint32
-	Unknown1           [11]byte
-	GameMode1          uint8
-	GameMode2          uint8
+	ScoreLimit         uint32
+	WinByCapital       uint8
+	UnknownSettings    [6]byte
+	GameModeBase       uint8
+	GameModeRules      uint8
 }
 
 type MapHeaderOutput struct {
-	MapHeaderInput    MapHeaderInput
-	MapName           string
-	MapSquareSize     int
-	DisabledTribesArr []int
-	UnlockedTribesArr []int
-	GameDifficulty    int
-	NumOpponents      int
-	UnknownArr        []byte
-	SelectedTribes    map[int]int
-	MapWidth          int
-	MapHeight         int
+	MapHeaderInput       MapHeaderInput
+	MapName              string
+	MapSquareSize        int
+	DisabledTribesArr    []int
+	UnlockedTribesArr    []int
+	GameDifficulty       int
+	NumOpponents         int
+	GameType             int
+	MapPreset            int
+	TurnTimeLimitMinutes int
+	UnknownFloat1        float32
+	UnknownFloat2        float32
+	BaseTimeSeconds      float32
+	TimeSettings         []int
+	SelectedTribeSkins   []TribeSkin
+	MapWidth             int
+	MapHeight            int
+}
+
+type TribeSkin struct {
+	Tribe int
+	Skin  int
 }
 
 type TileDataHeader struct {
@@ -72,6 +85,7 @@ type TileData struct {
 	PlayerVisibility           []int
 	HasRoad                    bool
 	HasWaterRoute              bool
+	TileSkin                   int
 	Unknown                    []int
 }
 
@@ -94,15 +108,15 @@ type ImprovementData struct {
 }
 
 type PlayerData struct {
-	Id                   int
+	PlayerId             int
 	Name                 string
 	AccountId            string
 	AutoPlay             bool
 	StartTileCoordinates [2]int
 	Tribe                int
 	UnknownByte1         int
-	UnknownInt1          int
-	UnknownArr1          []PlayerUnknownData
+	DifficultyHandicap   int
+	AggressionsByPlayers []PlayerAggression
 	Currency             int
 	Score                int
 	UnknownInt2          int
@@ -114,21 +128,21 @@ type PlayerData struct {
 	TotalUnitsLost       int
 	TotalTribesDestroyed int
 	OverrideColor        []int
-	UnknownByte2         byte
+	OverrideTribe        byte
 	UniqueImprovements   []int
 	DiplomacyArr         []DiplomacyData
 	DiplomacyMessages    []DiplomacyMessage
 	DestroyedByTribe     int
 	DestroyedTurn        int
 	UnknownBuffer2       []int
+	EndScore             int
+	PlayerSkin           int
+	UnknownBuffer3       []int
 }
 
-type PlayerUnknownData struct {
-	PlayerId int
-	Unknown1 int
-	Unknown2 int
-	Unknown3 int
-	Unknown4 int
+type PlayerAggression struct {
+	PlayerId   int
+	Aggression int
 }
 
 type UnitData struct {
@@ -242,6 +256,14 @@ func unsafeReadInt8(reader *io.SectionReader) int8 {
 	return signedIntValue
 }
 
+func unsafeReadFloat32(reader *io.SectionReader) float32 {
+	floatValue := float32(0)
+	if err := binary.Read(reader, binary.LittleEndian, &floatValue); err != nil {
+		log.Fatal("Failed to load float32: ", err)
+	}
+	return floatValue
+}
+
 func readFixedList(streamReader *io.SectionReader, listSize int) []byte {
 	buffer := make([]byte, listSize)
 	if err := binary.Read(streamReader, binary.LittleEndian, &buffer); err != nil {
@@ -305,7 +327,7 @@ func buildReaderForDecompressedFile(inputFilename string) (*bytes.Reader, int) {
 	return bytes.NewReader(decompressedContents), decompressedLength
 }
 
-func readImprovementData(streamReader *io.SectionReader) ImprovementData {
+func DeserializeImprovementDataFromBytes(streamReader *io.SectionReader) ImprovementData {
 	level := unsafeReadUint16(streamReader)
 	foundedTurn := unsafeReadUint16(streamReader)
 	currentPopulation := unsafeReadInt16(streamReader)
@@ -331,7 +353,7 @@ func readImprovementData(streamReader *io.SectionReader) ImprovementData {
 	}
 
 	rebellionFlag := unsafeReadUint16(streamReader)
-	var rebellionBuffer []int
+	rebellionBuffer := []int{}
 	if rebellionFlag != 0 {
 		rebellionBuffer = convertByteListToInt(readFixedList(streamReader, 2))
 	}
@@ -385,7 +407,7 @@ func readTileData(streamReader *io.SectionReader, tileData [][]TileData, mapWidt
 
 			var improvementDataPtr *ImprovementData
 			if improvementType != -1 {
-				improvementData := readImprovementData(streamReader)
+				improvementData := DeserializeImprovementDataFromBytes(streamReader)
 				fmt.Printf("Improvement data: %+v\n", improvementData)
 				improvementDataPtr = &improvementData
 			}
@@ -455,7 +477,8 @@ func readTileData(streamReader *io.SectionReader, tileData [][]TileData, mapWidt
 			playerVisibilityList := convertByteListToInt(readFixedList(streamReader, int(playerVisibilityListSize)))
 			hasRoad := unsafeReadUint8(streamReader)
 			hasWaterRoute := unsafeReadUint8(streamReader)
-			unknown := convertByteListToInt(readFixedList(streamReader, 4))
+			tileSkin := unsafeReadUint16(streamReader)
+			unknown := convertByteListToInt(readFixedList(streamReader, 2))
 
 			tileData[i][j] = TileData{
 				WorldCoordinates:           [2]int{int(tileDataHeader.WorldCoordinates[0]), int(tileDataHeader.WorldCoordinates[1])},
@@ -465,6 +488,10 @@ func readTileData(streamReader *io.SectionReader, tileData [][]TileData, mapWidt
 				Owner:                      int(tileDataHeader.Owner),
 				Capital:                    int(tileDataHeader.Capital),
 				CapitalCoordinates:         [2]int{int(tileDataHeader.CapitalCoordinates[0]), int(tileDataHeader.CapitalCoordinates[1])},
+				ResourceExists:             resourceExistsFlag != 0,
+				ResourceType:               resourceType,
+				ImprovementExists:          improvementExistsFlag != 0,
+				ImprovementType:            improvementType,
 				ImprovementData:            improvementDataPtr,
 				Unit:                       unitDataPtr,
 				PassengerUnit:              passengerUnitDataPtr,
@@ -475,11 +502,8 @@ func readTileData(streamReader *io.SectionReader, tileData [][]TileData, mapWidt
 				PlayerVisibility:           playerVisibilityList,
 				HasRoad:                    hasRoad != 0,
 				HasWaterRoute:              hasWaterRoute != 0,
+				TileSkin:                   int(tileSkin),
 				Unknown:                    unknown,
-				ResourceExists:             resourceExistsFlag != 0,
-				ResourceType:               resourceType,
-				ImprovementExists:          improvementExistsFlag != 0,
-				ImprovementType:            improvementType,
 			}
 			fmt.Printf(fmt.Sprintf("TileData (%v, %v): %+v\n", i, j, tileData[i][j]))
 
@@ -495,7 +519,7 @@ func readTileData(streamReader *io.SectionReader, tileData [][]TileData, mapWidt
 	}
 }
 
-func readMapHeader(streamReader *io.SectionReader) MapHeaderOutput {
+func DeserializeMapHeaderFromBytes(streamReader *io.SectionReader) MapHeaderOutput {
 	mapHeaderInput := MapHeaderInput{}
 	if err := binary.Read(streamReader, binary.LittleEndian, &mapHeaderInput); err != nil {
 		log.Fatal("Failed to load MapHeaderInput: ", err)
@@ -520,39 +544,50 @@ func readMapHeader(streamReader *io.SectionReader) MapHeaderOutput {
 
 	gameDifficulty := unsafeReadUint16(streamReader)
 	numOpponents := unsafeReadUint32(streamReader)
-	unknownArr := readFixedList(streamReader, 5+int(unlockedTribesSize))
+	gameType := unsafeReadUint16(streamReader)
+	mapPreset := unsafeReadUint8(streamReader)
+	turnTimeLimitMinutes := unsafeReadInt32(streamReader)
+	unknownFloat1 := unsafeReadFloat32(streamReader)
+	unknownFloat2 := unsafeReadFloat32(streamReader)
+	baseTimeSeconds := unsafeReadFloat32(streamReader)
+	timeSettings := readFixedList(streamReader, 4)
 
 	selectedTribeSkinSize := unsafeReadUint32(streamReader)
-	selectedTribeSkins := make(map[int]int)
+	selectedTribeSkins := make([]TribeSkin, int(selectedTribeSkinSize))
 	for i := 0; i < int(selectedTribeSkinSize); i++ {
 		tribe := unsafeReadUint16(streamReader)
 		skin := unsafeReadUint16(streamReader)
-		selectedTribeSkins[int(tribe)] = int(skin)
+		selectedTribeSkins[i] = TribeSkin{
+			Tribe: int(tribe),
+			Skin:  int(skin),
+		}
 	}
 
 	mapWidth := unsafeReadUint16(streamReader)
 	mapHeight := unsafeReadUint16(streamReader)
-	if mapWidth == 0 && mapHeight == 0 {
-		mapWidth = unsafeReadUint16(streamReader)
-		mapHeight = unsafeReadUint16(streamReader)
-	}
 
 	return MapHeaderOutput{
-		MapHeaderInput:    mapHeaderInput,
-		MapName:           mapName,
-		MapSquareSize:     squareSize,
-		DisabledTribesArr: disabledTribesArr,
-		UnlockedTribesArr: unlockedTribesArr,
-		GameDifficulty:    int(gameDifficulty),
-		NumOpponents:      int(numOpponents),
-		UnknownArr:        unknownArr,
-		SelectedTribes:    selectedTribeSkins,
-		MapWidth:          int(mapWidth),
-		MapHeight:         int(mapHeight),
+		MapHeaderInput:       mapHeaderInput,
+		MapName:              mapName,
+		MapSquareSize:        squareSize,
+		DisabledTribesArr:    disabledTribesArr,
+		UnlockedTribesArr:    unlockedTribesArr,
+		GameDifficulty:       int(gameDifficulty),
+		NumOpponents:         int(numOpponents),
+		GameType:             int(gameType),
+		MapPreset:            int(mapPreset),
+		TurnTimeLimitMinutes: int(turnTimeLimitMinutes),
+		UnknownFloat1:        unknownFloat1,
+		UnknownFloat2:        unknownFloat2,
+		BaseTimeSeconds:      baseTimeSeconds,
+		TimeSettings:         convertByteListToInt(timeSettings),
+		SelectedTribeSkins:   selectedTribeSkins,
+		MapWidth:             int(mapWidth),
+		MapHeight:            int(mapHeight),
 	}
 }
 
-func readPlayerData(streamReader *io.SectionReader) PlayerData {
+func DeserializePlayerDataFromBytes(streamReader *io.SectionReader) PlayerData {
 	playerId := unsafeReadUint8(streamReader)
 	playerName := readVarString(streamReader, "playerName")
 	playerAccountId := readVarString(streamReader, "playerAccountId")
@@ -561,23 +596,21 @@ func readPlayerData(streamReader *io.SectionReader) PlayerData {
 	startTileCoordinates2 := unsafeReadInt32(streamReader)
 	tribe := unsafeReadUint16(streamReader)
 	unknownByte1 := unsafeReadUint8(streamReader)
-	unknownInt1 := unsafeReadUint32(streamReader)
+	difficultyHandicap := unsafeReadUint32(streamReader)
 
-	unknownArrLen1 := unsafeReadUint16(streamReader)
-	unknownArr1 := make([]PlayerUnknownData, 0)
-	for i := 0; i < int(unknownArrLen1); i++ {
+	aggressionArrLen := unsafeReadUint16(streamReader)
+	aggressionsByPlayers := make([]PlayerAggression, 0)
+	for i := 0; i < int(aggressionArrLen); i++ {
 		playerIdOther := unsafeReadUint8(streamReader)
-		value2 := readFixedList(streamReader, 4)
-		unknownArr1 = append(unknownArr1, PlayerUnknownData{
-			PlayerId: int(playerIdOther),
-			Unknown1: int(value2[0]),
-			Unknown2: int(value2[1]),
-			Unknown3: int(value2[2]),
-			Unknown4: int(value2[3]),
+		aggression := unsafeReadInt32(streamReader)
+		aggressionsByPlayers = append(aggressionsByPlayers, PlayerAggression{
+			PlayerId:   int(playerIdOther),
+			Aggression: int(aggression),
 		})
 	}
 
 	currency := unsafeReadUint32(streamReader)
+
 	score := unsafeReadUint32(streamReader)
 	unknownInt2 := unsafeReadUint32(streamReader)
 	numCities := unsafeReadUint16(streamReader)
@@ -619,7 +652,7 @@ func readPlayerData(streamReader *io.SectionReader) PlayerData {
 	totalLosses := unsafeReadInt32(streamReader)
 	totalTribesDestroyed := unsafeReadInt32(streamReader)
 	overrideColor := convertByteListToInt(readFixedList(streamReader, 4))
-	unknownByte2 := unsafeReadUint8(streamReader)
+	overrideTribe := unsafeReadUint8(streamReader)
 
 	playerUniqueImprovementsSize := unsafeReadUint16(streamReader)
 	playerUniqueImprovements := make([]int, int(playerUniqueImprovementsSize))
@@ -652,18 +685,21 @@ func readPlayerData(streamReader *io.SectionReader) PlayerData {
 
 	destroyedByTribe := unsafeReadUint8(streamReader)
 	destroyedTurn := unsafeReadUint32(streamReader)
-	unknownBuffer2 := convertByteListToInt(readFixedList(streamReader, 14))
+	unknownBuffer2 := convertByteListToInt(readFixedList(streamReader, 4))
+	endScore := unsafeReadInt32(streamReader)
+	playerSkin := unsafeReadUint16(streamReader)
+	unknownBuffer3 := convertByteListToInt(readFixedList(streamReader, 4))
 
 	return PlayerData{
-		Id:                   int(playerId),
+		PlayerId:             int(playerId),
 		Name:                 playerName,
 		AccountId:            playerAccountId,
 		AutoPlay:             int(autoPlay) != 0,
 		StartTileCoordinates: [2]int{int(startTileCoordinates1), int(startTileCoordinates2)},
 		Tribe:                int(tribe),
 		UnknownByte1:         int(unknownByte1),
-		UnknownInt1:          int(unknownInt1),
-		UnknownArr1:          unknownArr1,
+		DifficultyHandicap:   int(difficultyHandicap),
+		AggressionsByPlayers: aggressionsByPlayers,
 		Currency:             int(currency),
 		Score:                int(score),
 		UnknownInt2:          int(unknownInt2),
@@ -675,13 +711,16 @@ func readPlayerData(streamReader *io.SectionReader) PlayerData {
 		TotalUnitsLost:       int(totalLosses),
 		TotalTribesDestroyed: int(totalTribesDestroyed),
 		OverrideColor:        overrideColor,
-		UnknownByte2:         unknownByte2,
+		OverrideTribe:        overrideTribe,
 		UniqueImprovements:   playerUniqueImprovements,
 		DiplomacyArr:         diplomacyArr,
 		DiplomacyMessages:    diplomacyMessagesArr,
 		DestroyedByTribe:     int(destroyedByTribe),
 		DestroyedTurn:        int(destroyedTurn),
 		UnknownBuffer2:       unknownBuffer2,
+		EndScore:             int(endScore),
+		PlayerSkin:           int(playerSkin),
+		UnknownBuffer3:       unknownBuffer3,
 	}
 }
 
@@ -691,7 +730,7 @@ func readAllPlayerData(streamReader *io.SectionReader) []PlayerData {
 	allPlayerData := make([]PlayerData, int(numPlayers))
 
 	for i := 0; i < int(numPlayers); i++ {
-		playerData := readPlayerData(streamReader)
+		playerData := DeserializePlayerDataFromBytes(streamReader)
 		allPlayerData[i] = playerData
 		fmt.Printf("%+v\n", playerData)
 	}
@@ -703,11 +742,11 @@ func buildOwnerTribeMap(allPlayerData []PlayerData) map[int]int {
 
 	for i := 0; i < len(allPlayerData); i++ {
 		playerData := allPlayerData[i]
-		mappedTribe, ok := ownerTribeMap[playerData.Id]
+		mappedTribe, ok := ownerTribeMap[playerData.PlayerId]
 		if ok {
-			log.Fatal(fmt.Sprintf("Owner to tribe map has duplicate player id %v already mapped to %v", playerData.Id, mappedTribe))
+			log.Fatal(fmt.Sprintf("Owner to tribe map has duplicate player id %v already mapped to %v", playerData.PlayerId, mappedTribe))
 		}
-		ownerTribeMap[playerData.Id] = playerData.Tribe
+		ownerTribeMap[playerData.PlayerId] = playerData.Tribe
 	}
 
 	return ownerTribeMap
@@ -718,7 +757,7 @@ func ReadPolytopiaSaveFile(inputFilename string) (*PolytopiaSaveOutput, error) {
 	streamReader := io.NewSectionReader(decompressedReader, int64(0), int64(decompressedLength))
 
 	// Read initial map state
-	initialMapHeaderOutput := readMapHeader(streamReader)
+	initialMapHeaderOutput := DeserializeMapHeaderFromBytes(streamReader)
 	fmt.Printf("initialMapHeaderOutput: %+v\n", initialMapHeaderOutput)
 
 	initialTileData := make([][]TileData, initialMapHeaderOutput.MapHeight)
@@ -734,7 +773,7 @@ func ReadPolytopiaSaveFile(inputFilename string) (*PolytopiaSaveOutput, error) {
 	fmt.Println("partBetweenInitialAndCurrentMap:", partBetweenInitialAndCurrentMap)
 
 	// Read current map state
-	currentMapHeaderOutput := readMapHeader(streamReader)
+	currentMapHeaderOutput := DeserializeMapHeaderFromBytes(streamReader)
 	fmt.Printf("currentMapHeaderOutput: %+v\n", currentMapHeaderOutput)
 
 	tileData := make([][]TileData, currentMapHeaderOutput.MapHeight)
