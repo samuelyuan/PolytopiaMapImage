@@ -59,12 +59,14 @@ The header contains all of the game settings.
 | uint32 | 4 bytes | CurrentTurn |
 | uint8 | 1 byte | CurrentPlayerIndex |
 | uint32 | 4 bytes | MaxUnitId |
-| uint8 | 1 byte | UnknownByte1 |
+| uint8 | 1 byte | CurrentGameState |
 | uint32 | 4 bytes | Seed |
 | uint32 | 4 bytes | TurnLimit |
-| byte[11] | 11 bytes | Unknown1 |
-| uint8 | 1 byte | GameMode1 |
-| uint8 | 1 byte | GameMode2 |
+| uint32 | 4 bytes | ScoreLimit |
+| uint8 | 1 byte | WinByCapital |
+| byte[6] | 6 bytes | UnknownSettings |
+| uint8 | 1 byte | GameModeBase |
+| uint8 | 1 byte | GameModeRules |
 | varstring | var bytes | Map name |
 | uint32 | 4 bytes | Map square size |
 | uint16 | 2 bytes | disabledTribesSize |
@@ -73,7 +75,13 @@ The header contains all of the game settings.
 | uint16 array | unlockedTribesSize*2 bytes | Unlocked tribes |
 | uint16 | 2 bytes | Game difficulty |
 | uint32 | 4 bytes | Number of opponents |
-| byte array | 5+unlockedTribesSize bytes | Unknown |
+| uint16 | 2 bytes | Game type |
+| uint8 | 1 byte | Map preset |
+| int32 | 4 bytes | Turn time limit in minutes |
+| float32 | 4 bytes | unknownFloat1 |
+| float32 | 4 bytes | unknownFloat2 |
+| float32 | 4 bytes | baseTimeSeconds |
+| byte array | 4 bytes | timeSettings |
 | uint32 | 4 bytes | selectedTribeSkinSize |
 | uint16 array | selectedTribeSkinSize*2 bytes | Tribe to skin map |
 | uint16 | 2 bytes | Map width |
