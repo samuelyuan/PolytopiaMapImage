@@ -146,7 +146,7 @@ type PlayerAggression struct {
 }
 
 type UnitData struct {
-	Id                 uint32
+	UnitId             uint32
 	Owner              uint8
 	UnitType           uint16
 	FollowerUnitId     uint32 // only initialized for cymanti centipedes and segments
@@ -453,24 +453,16 @@ func readTileData(streamReader *io.SectionReader, tileData [][]TileData, mapWidt
 						passengerUnitEffectData = append(passengerUnitEffectData, int(unsafeReadUint16(streamReader)))
 					}
 					passengerUnitDirectionData = readFixedList(streamReader, 5)
-
-					unitEffectCount := int(unsafeReadUint16(streamReader))
-					unitEffectData = make([]int, 0)
-					for statusIndex := 0; statusIndex < unitEffectCount; statusIndex++ {
-						unitEffectData = append(unitEffectData, int(unsafeReadUint16(streamReader)))
-					}
-					unitDirectionData = readFixedList(streamReader, 5)
 					fmt.Println("Passenger Unit effect data:", passengerUnitEffectData, ", direction data:", passengerUnitDirectionData)
-					fmt.Println("Unit effect data:", unitEffectData, ", direction data:", unitDirectionData)
-				} else {
-					unitEffectCount := int(unsafeReadUint16(streamReader))
-					unitEffectData = make([]int, 0)
-					for statusIndex := 0; statusIndex < unitEffectCount; statusIndex++ {
-						unitEffectData = append(unitEffectData, int(unsafeReadUint16(streamReader)))
-					}
-					unitDirectionData = readFixedList(streamReader, 5)
-					fmt.Println("Unit effect data:", unitEffectData, ", direction data:", unitDirectionData)
 				}
+				unitEffectCount := int(unsafeReadUint16(streamReader))
+				unitEffectData = make([]int, 0)
+				for statusIndex := 0; statusIndex < unitEffectCount; statusIndex++ {
+					unitEffectData = append(unitEffectData, int(unsafeReadUint16(streamReader)))
+				}
+				unitDirectionData = readFixedList(streamReader, 5)
+
+				fmt.Println("Unit effect data:", unitEffectData, ", direction data:", unitDirectionData)
 			}
 
 			playerVisibilityListSize := unsafeReadUint8(streamReader)
@@ -610,7 +602,6 @@ func DeserializePlayerDataFromBytes(streamReader *io.SectionReader) PlayerData {
 	}
 
 	currency := unsafeReadUint32(streamReader)
-
 	score := unsafeReadUint32(streamReader)
 	unknownInt2 := unsafeReadUint32(streamReader)
 	numCities := unsafeReadUint16(streamReader)
