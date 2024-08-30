@@ -87,6 +87,8 @@ type TileData struct {
 	HasWaterRoute              bool
 	TileSkin                   int
 	Unknown                    []int
+	Unknown2                   int   // introduced in new aquarion update (version 105)
+	Unknown2Arr                []int // introduced in new aquarion update (version 105)
 }
 
 type ImprovementData struct {
@@ -377,7 +379,7 @@ func DeserializeImprovementDataFromBytes(streamReader *io.SectionReader) Improve
 	}
 }
 
-func readTileData(streamReader *io.SectionReader, tileData [][]TileData, mapWidth int, mapHeight int) {
+func readTileData(streamReader *io.SectionReader, tileData [][]TileData, mapWidth int, mapHeight int, gameVersion int) {
 	allUnitData := make([]UnitData, 0)
 
 	for i := 0; i < int(mapHeight); i++ {
@@ -471,6 +473,14 @@ func readTileData(streamReader *io.SectionReader, tileData [][]TileData, mapWidt
 			hasWaterRoute := unsafeReadUint8(streamReader)
 			tileSkin := unsafeReadUint16(streamReader)
 			unknown := convertByteListToInt(readFixedList(streamReader, 2))
+			var unknown2 int
+			var unknown2Arr []int
+			if gameVersion >= 105 {
+				unknown2 = int(unsafeReadUint8(streamReader))
+				if unknown2 == 1 {
+					unknown2Arr = convertByteListToInt(readFixedList(streamReader, 4))
+				}
+			}
 
 			tileData[i][j] = TileData{
 				WorldCoordinates:           [2]int{int(tileDataHeader.WorldCoordinates[0]), int(tileDataHeader.WorldCoordinates[1])},
@@ -496,6 +506,8 @@ func readTileData(streamReader *io.SectionReader, tileData [][]TileData, mapWidt
 				HasWaterRoute:              hasWaterRoute != 0,
 				TileSkin:                   int(tileSkin),
 				Unknown:                    unknown,
+				Unknown2:                   unknown2,
+				Unknown2Arr:                unknown2Arr,
 			}
 			fmt.Printf(fmt.Sprintf("TileData (%v, %v): %+v\n", i, j, tileData[i][j]))
 
@@ -755,7 +767,8 @@ func ReadPolytopiaSaveFile(inputFilename string) (*PolytopiaSaveOutput, error) {
 	for i := 0; i < initialMapHeaderOutput.MapHeight; i++ {
 		initialTileData[i] = make([]TileData, initialMapHeaderOutput.MapWidth)
 	}
-	readTileData(streamReader, initialTileData, initialMapHeaderOutput.MapWidth, initialMapHeaderOutput.MapHeight)
+	gameVersion := int(initialMapHeaderOutput.MapHeaderInput.Version1)
+	readTileData(streamReader, initialTileData, initialMapHeaderOutput.MapWidth, initialMapHeaderOutput.MapHeight, gameVersion)
 
 	ownerTribeMap := buildOwnerTribeMap(readAllPlayerData(streamReader))
 	fmt.Println("Owner to tribe map:", ownerTribeMap)
@@ -771,7 +784,7 @@ func ReadPolytopiaSaveFile(inputFilename string) (*PolytopiaSaveOutput, error) {
 	for i := 0; i < currentMapHeaderOutput.MapHeight; i++ {
 		tileData[i] = make([]TileData, currentMapHeaderOutput.MapWidth)
 	}
-	readTileData(streamReader, tileData, currentMapHeaderOutput.MapWidth, currentMapHeaderOutput.MapHeight)
+	readTileData(streamReader, tileData, currentMapHeaderOutput.MapWidth, currentMapHeaderOutput.MapHeight, gameVersion)
 
 	playerData := readAllPlayerData(streamReader)
 	ownerTribeMap = buildOwnerTribeMap(playerData)
