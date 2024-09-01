@@ -87,8 +87,8 @@ type TileData struct {
 	HasWaterRoute              bool
 	TileSkin                   int
 	Unknown                    []int
-	Unknown2                   int   // introduced in new aquarion update (version 105)
-	Unknown2Arr                []int // introduced in new aquarion update (version 105)
+	FloodedFlag                int // introduced in new aquarion update (version 105)
+	FloodedValue               int // introduced in new aquarion update (version 105)
 }
 
 type ImprovementData struct {
@@ -473,12 +473,12 @@ func readTileData(streamReader *io.SectionReader, tileData [][]TileData, mapWidt
 			hasWaterRoute := unsafeReadUint8(streamReader)
 			tileSkin := unsafeReadUint16(streamReader)
 			unknown := convertByteListToInt(readFixedList(streamReader, 2))
-			var unknown2 int
-			var unknown2Arr []int
+			var floodedFlag int
+			var floodedValue int
 			if gameVersion >= 105 {
-				unknown2 = int(unsafeReadUint8(streamReader))
-				if unknown2 == 1 {
-					unknown2Arr = convertByteListToInt(readFixedList(streamReader, 4))
+				floodedFlag = int(unsafeReadUint8(streamReader))
+				if floodedFlag == 1 {
+					floodedValue = int(unsafeReadUint32(streamReader))
 				}
 			}
 
@@ -506,8 +506,8 @@ func readTileData(streamReader *io.SectionReader, tileData [][]TileData, mapWidt
 				HasWaterRoute:              hasWaterRoute != 0,
 				TileSkin:                   int(tileSkin),
 				Unknown:                    unknown,
-				Unknown2:                   unknown2,
-				Unknown2Arr:                unknown2Arr,
+				FloodedFlag:                floodedFlag,
+				FloodedValue:               floodedValue,
 			}
 			fmt.Printf(fmt.Sprintf("TileData (%v, %v): %+v\n", i, j, tileData[i][j]))
 
