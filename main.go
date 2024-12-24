@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/samuelyuan/PolytopiaMapImage/fileio"
 	"github.com/samuelyuan/PolytopiaMapImage/graphics"
+	polytopiamapmodel "github.com/samuelyuan/polytopiamapmodelgo"
 )
 
 func main() {
@@ -23,7 +23,7 @@ func main() {
 	fmt.Println("Output filename: ", outputFilename)
 	fmt.Println("Mode:", mode)
 
-	saveFileData, err := fileio.ReadPolytopiaSaveFile(inputFilename)
+	saveFileData, err := polytopiamapmodel.ReadPolytopiaCompressedFile(inputFilename)
 	if err != nil {
 		log.Fatal("Failed to load save file: ", err)
 		return

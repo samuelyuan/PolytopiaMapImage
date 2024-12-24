@@ -8,8 +8,8 @@ import (
 	"log"
 	"os"
 
-	"github.com/samuelyuan/PolytopiaMapImage/fileio"
 	"github.com/samuelyuan/PolytopiaMapImage/graphics/quantize"
+	polytopiamapmodel "github.com/samuelyuan/polytopiamapmodelgo"
 )
 
 const (
@@ -53,7 +53,7 @@ type MapCoordinates struct {
 	Coordinates [2]int
 }
 
-func buildCityToTerritoryMap(saveData *fileio.PolytopiaSaveOutput) map[string][]MapCoordinates {
+func buildCityToTerritoryMap(saveData *polytopiamapmodel.PolytopiaSaveOutput) map[string][]MapCoordinates {
 	mapHeight := saveData.MapHeight
 	mapWidth := saveData.MapWidth
 
@@ -77,7 +77,7 @@ func buildCityToTerritoryMap(saveData *fileio.PolytopiaSaveOutput) map[string][]
 }
 
 func captureCityTiles(
-	saveData *fileio.PolytopiaSaveOutput,
+	saveData *polytopiamapmodel.PolytopiaSaveOutput,
 	cityTerritoryMap map[string][]MapCoordinates,
 	cityCoordinates0 int,
 	cityCoordinates1 int,
@@ -91,7 +91,7 @@ func captureCityTiles(
 	}
 }
 
-func DrawReplay(saveData *fileio.PolytopiaSaveOutput, outputFilename string) {
+func DrawReplay(saveData *polytopiamapmodel.PolytopiaSaveOutput, outputFilename string) {
 	cityTerritoryMap := buildCityToTerritoryMap(saveData)
 
 	// Build initial map from turn 1
@@ -118,7 +118,7 @@ func DrawReplay(saveData *fileio.PolytopiaSaveOutput, outputFilename string) {
 	for turn := 1; turn <= saveData.MaxTurn; turn++ {
 		fmt.Println("Drawing frame for turn", turn)
 
-		captureEvents := make([]fileio.ActionCaptureCity, 0)
+		captureEvents := make([]polytopiamapmodel.ActionCaptureCity, 0)
 		_, ok := saveData.TurnCaptureMap[turn]
 		if ok {
 			captureEvents = saveData.TurnCaptureMap[turn]

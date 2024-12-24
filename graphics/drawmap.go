@@ -10,7 +10,7 @@ import (
 
 	"github.com/fogleman/gg"
 	"github.com/golang/freetype/truetype"
-	"github.com/samuelyuan/PolytopiaMapImage/fileio"
+	polytopiamapmodel "github.com/samuelyuan/polytopiamapmodelgo"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
@@ -57,7 +57,7 @@ func getPhysicalMapTileColor(terrain int) color.RGBA {
 	return color.RGBA{0, 0, 0, 255}
 }
 
-func getPoliticalMapTileColor(saveData *fileio.PolytopiaSaveOutput, row int, column int) color.RGBA {
+func getPoliticalMapTileColor(saveData *polytopiamapmodel.PolytopiaSaveOutput, row int, column int) color.RGBA {
 	tileOwner := saveData.TileData[row][column].Owner
 	tribe, ok := saveData.OwnerTribeMap[tileOwner]
 	if !ok {
@@ -154,7 +154,7 @@ func drawIce(dc *gg.Context, imageX float64, imageY float64) {
 	dc.Fill()
 }
 
-func drawTerritoryTiles(dc *gg.Context, saveData *fileio.PolytopiaSaveOutput, mapHeight int, mapWidth int) {
+func drawTerritoryTiles(dc *gg.Context, saveData *polytopiamapmodel.PolytopiaSaveOutput, mapHeight int, mapWidth int) {
 	for i := 0; i < mapHeight; i++ {
 		for j := 0; j < mapWidth; j++ {
 			x, y := getImagePosition(i, j)
@@ -188,7 +188,7 @@ func drawTerritoryTiles(dc *gg.Context, saveData *fileio.PolytopiaSaveOutput, ma
 	}
 }
 
-func drawBorders(dc *gg.Context, saveData *fileio.PolytopiaSaveOutput, mapHeight int, mapWidth int) {
+func drawBorders(dc *gg.Context, saveData *polytopiamapmodel.PolytopiaSaveOutput, mapHeight int, mapWidth int) {
 	for i := 0; i < mapHeight; i++ {
 		for j := 0; j < mapWidth; j++ {
 			x1, y1 := getImagePosition(i, j)
@@ -229,7 +229,7 @@ func drawBorders(dc *gg.Context, saveData *fileio.PolytopiaSaveOutput, mapHeight
 	dc.SetLineWidth(1.0)
 }
 
-func drawCityNames(dc *gg.Context, saveData *fileio.PolytopiaSaveOutput, mapHeight int, mapWidth int) {
+func drawCityNames(dc *gg.Context, saveData *polytopiamapmodel.PolytopiaSaveOutput, mapHeight int, mapWidth int) {
 	dc.SetRGB255(255, 255, 255)
 	for i := 0; i < mapHeight; i++ {
 		for j := 0; j < mapWidth; j++ {
@@ -254,7 +254,7 @@ func drawCityNames(dc *gg.Context, saveData *fileio.PolytopiaSaveOutput, mapHeig
 	}
 }
 
-func DrawMap(saveData *fileio.PolytopiaSaveOutput) image.Image {
+func DrawMap(saveData *polytopiamapmodel.PolytopiaSaveOutput) image.Image {
 	mapHeight := saveData.MapHeight
 	mapWidth := saveData.MapWidth
 

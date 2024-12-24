@@ -5,6 +5,12 @@ github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0/go.mod h1:E/TSTwGw
 github.com/google/go-cmp v0.6.0/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
 github.com/pierrec/lz4/v4 v4.1.21 h1:yOVMLb6qSIDP67pl/5F7RepeKYu/VmTyEXvuMI5d9mQ=
 github.com/pierrec/lz4/v4 v4.1.21/go.mod h1:gZWDp/Ze/IJXGXf23ltt2EXimqmTUXEy0GFuRQyBid4=
+github.com/pierrec/lz4/v4 v4.1.22 h1:cKFw6uJDK+/gfw5BcDL0JL5aBsAFdsIT18eRtLj7VIU=
+github.com/pierrec/lz4/v4 v4.1.22/go.mod h1:gZWDp/Ze/IJXGXf23ltt2EXimqmTUXEy0GFuRQyBid4=
+github.com/samuelyuan/polytopiamapmodelgo v0.0.0-20241223211739-b38e5ea6a003 h1:+L5DcMr+LbnMMuc3mlA1JwkASQ7ss8A//u9Z8AvPx/A=
+github.com/samuelyuan/polytopiamapmodelgo v0.0.0-20241223211739-b38e5ea6a003/go.mod h1:Qtj153LGxD7knRy8QatffCjz2NUyX38jJlU2HwI3JGo=
+github.com/samuelyuan/polytopiamapmodelgo v0.0.0-20241224002108-637d0b5713c0 h1:xVynrqs1ijdw6pBW5prEpc+SP3Fa8T12fcanWfH5A3Y=
+github.com/samuelyuan/polytopiamapmodelgo v0.0.0-20241224002108-637d0b5713c0/go.mod h1:Qtj153LGxD7knRy8QatffCjz2NUyX38jJlU2HwI3JGo=
 github.com/yuin/goldmark v1.4.13/go.mod h1:6yULJ656Px+3vBD8DxQVa3kxgyrAnzto9xy5taEt/CY=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
 golang.org/x/crypto v0.0.0-20210921155107-089bfa567519/go.mod h1:GvvjBRRGRdwPK5ydBHafDWAxML/pGHZbMvKqRZ5+Abc=
